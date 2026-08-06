@@ -7,6 +7,12 @@ on:
       - "release/**"
     tags:
       - "v*"
+    paths-ignore:
+      - ".release-status/**"
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -81,3 +87,30 @@ jobs:
           files: |
             release/*.exe
             release/SHA256SUMS.txt
+
+      - name: Record release status
+        if: ${{ always() && startsWith(github.ref, 'refs/heads/release/') }}
+        shell: pwsh
+        run: |
+          $version = "${{ steps.package.outputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = "unknown"
+          }
+
+          New-Item -ItemType Directory -Path .release-status -Force | Out-Null
+          [ordered]@{
+            status = "${{ job.status }}"
+            version = $version
+            run_id = "${{ github.run_id }}"
+            run_url = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            commit = "${{ github.sha }}"
+          } | ConvertTo-Json | Set-Content ".release-status/v$version.json"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .release-status
+          if (git diff --cached --quiet) {
+            exit 0
+          }
+          git commit -m "Record v$version release status"
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
