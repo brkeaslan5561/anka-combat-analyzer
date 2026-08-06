@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "analyze": "node --import tsx src/cli/analyze.ts",
     "smoke:worker": "npm run build:electron && node scripts/worker-smoke.mjs",
-    "dist:win": "npm run build && electron-builder --win nsis portable"
+    "dist:win": "npm run build && electron-builder --win nsis portable --publish never"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
