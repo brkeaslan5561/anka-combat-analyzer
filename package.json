@@ -1,0 +1,74 @@
+{
+  "name": "anka-combat-analyzer",
+  "version": "1.0.0",
+  "private": true,
+  "author": "Ashes of Anka",
+  "description": "Neverwinter canlı combat log analizörü ve düşman gücü zamanlayıcısı",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "build": "vite build && npm run build:electron",
+    "build:electron": "tsup src/electron/main.ts src/electron/preload.ts src/electron/logWorker.ts --format cjs --out-dir dist-electron --external electron --sourcemap",
+    "dev": "npm run build:electron && concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron dist-electron/main.js\"",
+    "start": "electron dist-electron/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "analyze": "node --import tsx src/cli/analyze.ts",
+    "smoke:worker": "npm run build:electron && node scripts/worker-smoke.mjs",
+    "dist:win": "npm run build && electron-builder --win nsis portable"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "latest",
+    "cross-env": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "tsup": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vitest": "latest",
+    "wait-on": "latest"
+  },
+  "build": {
+    "appId": "com.ashesofanka.combatanalyzer",
+    "productName": "Anka Combat Analyzer",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "Anka-Combat-Analyzer-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "portable": {
+      "artifactName": "Anka-Combat-Analyzer-Portable-${version}-${arch}.${ext}"
+    }
+  }
+}
