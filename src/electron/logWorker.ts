@@ -2,6 +2,10 @@ import fs from "node:fs/promises";
 import { StringDecoder } from "node:string_decoder";
 import { parentPort } from "node:worker_threads";
 import { CombatAnalysisEngine } from "../core/analysisEngine";
+import {
+  isHostileCombatEvent,
+  parseCombatLogLine,
+} from "../core/combatLogParser";
 import type {
   CombatSnapshot,
   EntityAnalysis,
@@ -52,6 +56,9 @@ type OutgoingMessage =
     }
   | { type: "cast"; cast: PowerCastEvent };
 
+const LATEST_SESSION_GAP_MS = 20 * 60 * 1_000;
+const MAX_LATEST_SESSION_MS = 3 * 60 * 60 * 1_000;
+
 if (!parentPort) {
   throw new Error("Log worker yalnızca worker thread içinde çalıştırılabilir.");
 }
@@ -70,8 +77,7 @@ parentPort.on("message", (message: IncomingMessage) => {
   if (message.type === "load") {
     void loadFile(message.filePath);
   } else if (message.type === "reset") {
-    engine.reset();
-    if (currentFilePath) postSnapshot(engine.snapshot(currentFilePath, true));
+    void clearAndTail();
   } else if (message.type === "start-new-encounter") {
     engine.startNewEncounter();
     if (currentFilePath) postSnapshot(engine.snapshot(currentFilePath, false));
@@ -124,24 +130,40 @@ async function loadFile(filePath: string): Promise<void> {
   postStatus({
     state: "loading",
     filePath,
-    message: "Combatlog analiz ediliyor…",
+    message: "Combatlog içindeki son oturum bulunuyor…",
     progress: 0,
   });
 
   try {
     const stat = await fs.stat(filePath);
     const initialSize = stat.size;
-    const buffer = initialSize > 0 ? await readRange(filePath, 0, initialSize) : Buffer.alloc(0);
+    const buffer =
+      initialSize > 0
+        ? await readRange(filePath, 0, initialSize)
+        : Buffer.alloc(0);
     if (activeGeneration !== generation) return;
 
     const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
     const hasCompleteLastLine = text.endsWith("\n");
-    const lines = text.split(/\r?\n/);
+    const allLines = text.split(/\r?\n/);
     if (!hasCompleteLastLine) {
-      pendingText = lines.pop() ?? "";
-    } else if (lines.at(-1) === "") {
-      lines.pop();
+      pendingText = allLines.pop() ?? "";
+    } else if (allLines.at(-1) === "") {
+      allLines.pop();
     }
+
+    const sessionStart = findLatestSessionStart(allLines);
+    const lines = allLines.slice(sessionStart);
+
+    postStatus({
+      state: "loading",
+      filePath,
+      message:
+        sessionStart > 0
+          ? "Son oyun/zindan oturumu analiz ediliyor…"
+          : "Combatlog analiz ediliyor…",
+      progress: 0,
+    });
 
     for (let index = 0; index < lines.length; index += 1) {
       if (lines[index]) engine.ingestLine(lines[index]);
@@ -163,7 +185,10 @@ async function loadFile(filePath: string): Promise<void> {
     postStatus({
       state: "live",
       filePath,
-      message: "Canlı takip açık",
+      message:
+        sessionStart > 0
+          ? "Son oturum yüklendi · canlı takip açık"
+          : "Canlı takip açık",
       progress: 1,
     });
     startPolling(activeGeneration);
@@ -174,6 +199,71 @@ async function loadFile(filePath: string): Promise<void> {
       message: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+async function clearAndTail(): Promise<void> {
+  const activeGeneration = ++generation;
+  stopPolling();
+  engine = new CombatAnalysisEngine();
+  pendingText = "";
+  decoder = new StringDecoder("utf8");
+  lastCadenceRefresh = Date.now();
+
+  if (!currentFilePath) {
+    byteOffset = 0;
+    return;
+  }
+
+  try {
+    const stat = await fs.stat(currentFilePath);
+    byteOffset = stat.size;
+    postSnapshot(engine.snapshot(currentFilePath, true));
+    postStatus({
+      state: "live",
+      filePath: currentFilePath,
+      message: "Temizlendi · bundan sonraki combat bekleniyor",
+      progress: 1,
+    });
+    startPolling(activeGeneration);
+  } catch (error) {
+    postStatus({
+      state: "error",
+      filePath: currentFilePath,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function findLatestSessionStart(lines: string[]): number {
+  let latestHostileAt: number | null = null;
+  let nextHostileAt: number | null = null;
+  let latestHostileIndex = -1;
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line) continue;
+    const parsed = parseCombatLogLine(line, index + 1);
+    if (!parsed.ok || !isHostileCombatEvent(parsed.event)) continue;
+
+    const occurredAt = parsed.event.timestamp;
+    if (latestHostileAt === null) {
+      latestHostileAt = occurredAt;
+      nextHostileAt = occurredAt;
+      latestHostileIndex = index;
+      continue;
+    }
+
+    if (
+      (nextHostileAt !== null && nextHostileAt - occurredAt > LATEST_SESSION_GAP_MS) ||
+      latestHostileAt - occurredAt > MAX_LATEST_SESSION_MS
+    ) {
+      return index + 1;
+    }
+
+    nextHostileAt = occurredAt;
+  }
+
+  return latestHostileIndex >= 0 ? 0 : lines.length;
 }
 
 function startPolling(activeGeneration: number): void {
