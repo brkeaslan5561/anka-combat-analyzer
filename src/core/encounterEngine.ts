@@ -26,6 +26,8 @@ type EncounterResult = "active" | "success" | "fail" | "ended";
 
 interface EncounterTargetAccumulator {
   name: string;
+  stableId: string;
+  instanceId: string;
   amount: number;
   hits: number;
   firstSeenAt: number;
@@ -71,6 +73,14 @@ export class EncounterEngine {
         this.current.kind === "aoe" &&
         this.current.hostileEvents > 0 &&
         hostileGap > phaseGapMs
+      ) {
+        this.endCurrent();
+      } else if (
+        this.current.kind === "boss" &&
+        hostileGap > phaseGapMs &&
+        hostileGap <= inactivityMs &&
+        isDamageToCreature(event) &&
+        !this.belongsToCurrentBossEncounter(event, this.current)
       ) {
         this.endCurrent();
       } else if (hostileGap > inactivityMs) {
@@ -284,19 +294,23 @@ export class EncounterEngine {
     if (!isDamageToCreature(event) || event.target.kind !== "creature") return;
     const amount = Math.max(0, event.magnitude);
     if (amount <= 0) return;
-    const target = encounter.damageTargets.get(event.target.stableId) ?? {
+    const key = event.target.instanceId;
+    const target = encounter.damageTargets.get(key) ?? {
       name: event.target.displayName,
+      stableId: event.target.stableId,
+      instanceId: event.target.instanceId,
       amount: 0,
       hits: 0,
       firstSeenAt: event.timestamp,
       lastSeenAt: event.timestamp,
     };
     target.name = event.target.displayName;
+    target.stableId = event.target.stableId;
     target.amount += amount;
     target.hits += 1;
     target.firstSeenAt = Math.min(target.firstSeenAt, event.timestamp);
     target.lastSeenAt = Math.max(target.lastSeenAt, event.timestamp);
-    encounter.damageTargets.set(event.target.stableId, target);
+    encounter.damageTargets.set(key, target);
   }
 
   private classifyEncounter(
@@ -338,7 +352,7 @@ export class EncounterEngine {
     const killBoost =
       hasKillFlag(event) &&
       event.target.kind === "creature" &&
-      event.target.stableId === candidate.targetId;
+      event.target.instanceId === candidate.targetId;
 
     // Bosses can have add waves. Persistence and repeated targeting therefore
     // matter more than requiring a very high single-target damage percentage.
@@ -363,6 +377,19 @@ export class EncounterEngine {
     encounter.bossTargetName = candidate.target.name;
   }
 
+  private belongsToCurrentBossEncounter(
+    event: CombatEvent,
+    encounter: EncounterAccumulator,
+  ): boolean {
+    const target = event.target.kind === "creature" ? event.target : null;
+    if (!target) return true;
+    if (target.instanceId === encounter.bossTargetId) return true;
+    if (encounter.damageTargets.has(target.instanceId)) return true;
+    return [...encounter.damageTargets.values()].some(
+      (known) => known.stableId === target.stableId,
+    );
+  }
+
   private isBossKill(
     event: CombatEvent,
     encounter: EncounterAccumulator,
@@ -371,7 +398,7 @@ export class EncounterEngine {
       encounter.kind === "boss" &&
       Boolean(encounter.bossTargetId) &&
       event.target.kind === "creature" &&
-      event.target.stableId === encounter.bossTargetId &&
+      event.target.instanceId === encounter.bossTargetId &&
       hasKillFlag(event)
     );
   }
