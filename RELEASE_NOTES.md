@@ -1,23 +1,24 @@
-# Anka Combat Analyzer v1.1.2
+# Anka Combat Analyzer v1.1.3
 
-Encounter yönetimi, log başlangıcı ve boss fail tespiti için düzeltme sürümü.
+Boss tanıma ve boss damage paylaşımı için güncelleme.
 
 ## Değişiklikler
 
-- Soldaki Encounters listesindeki tekil encounterlar artık silinebilir. Satırın sağındaki `×` kontrolüyle onay vererek listeden kaldırabilirsiniz.
-- Seçili encounter silinirse görünüm otomatik olarak `All Encounters`a döner.
-- Silinen encounter tercihi aynı log dosyası için hatırlanır; snapshot yenilendiğinde tekrar görünmez.
-- `Clear` artık eski log satırlarını yeniden analiz etmez. Clear'a basıldığı an dosyanın sonu başlangıç kabul edilir ve yalnızca bundan sonra gelen combat okunur.
-- Yeni bir log dosyası yüklendiğinde tüm geçmiş dosya yerine otomatik olarak en son oyun/zindan oturumu bulunup analiz edilir.
-- Son oturum tespiti uzun süreli combat boşluklarını ve çok eski kayıtları dışarıda bırakır; eski zindanların Encounters listesine dolması azaltılır.
-- Boss bitişi artık tek başına `Kill` flag'ine bağlı değildir. Bazı bosslarda Kill satırı eksik olsa bile sırf sonraki AOE başladığı için encounter `FAIL` olmaz.
-- Aynı boss kısa süre içinde yeniden engage edilirse önceki doğrulanmış boss denemesi otomatik `FAIL` olarak işaretlenir. Böylece wipe/reset ile başarılı bitiş daha güvenli ayrılır.
-- Boss Kill flag'i farklı instance bilgisiyle gelse bile stable boss kimliği üzerinden başarı tespiti yapılabilir.
-- Boss + add, Kill flagsiz boss bitişi, boss re-engage/fail ve manuel encounter senaryoları için regresyon testleri güncellendi.
+- Hunang gibi yaklaşık 10–15 saniye süren kısa boss savaşları artık yanında add olsa bile otomatik olarak `BOSS` şeklinde tanınabilir.
+- Boss tespiti artık yalnızca savaş süresine bağlı değildir; tekil boss archetype'ı, encounter içindeki kalıcılığı, hit payı ve diğer moblara göre hasar üstünlüğü birlikte değerlendirilir.
+- Kısa trash pull içindeki sıradan elite mobların boss sayılmaması için baskınlık ve benzersiz archetype kontrolleri korunur.
+- Güçlü `Kill` sinyali gelen kısa bosslarda süre eşiği düşürüldü.
+- Encounter özetine gerçek boss instance/stable kimliği eklendi; add'li savaşlarda ana boss hedefi güvenilir biçimde saklanır.
+- Bir `BOSS` encounter seçildiğinde Encounter Summary tablosunda yeni `Boss Damage` ve `Boss %` sütunları görünür.
+- `Boss Damage`, oyuncunun yalnızca ana boss hedefe verdiği hasarı gösterir; add ve diğer mob hasarı dahil edilmez.
+- `Boss %`, tüm oyuncuların ana bossa verdiği toplam hasar içindeki oyuncu payını gösterir.
+- Pet/companion hasarı normal owner-attribution mantığıyla sahibine dahil edilir.
+- Boss damage değerleri tamamlanmış encounterlarda cache'lenir; canlı log güncellemeleri eski boss seçiliyken gereksiz tekrar hesaplama oluşturmaz.
+- Kısa boss + iki add ve kısa elite trash pull senaryoları için regresyon testleri eklendi.
 
 ## İndirme
 
-- `Anka-Combat-Analyzer-Setup-1.1.2-x64.exe`: normal Windows kurulumu
-- `Anka-Combat-Analyzer-Portable-1.1.2-x64.exe`: kurulum gerektirmeyen sürüm
+- `Anka-Combat-Analyzer-Setup-1.1.3-x64.exe`: normal Windows kurulumu
+- `Anka-Combat-Analyzer-Portable-1.1.3-x64.exe`: kurulum gerektirmeyen sürüm
 
 Bu sürüm kod imzalama sertifikasıyla imzalanmamıştır. Windows SmartScreen ilk çalıştırmada “Bilinmeyen yayıncı” uyarısı gösterebilir. İndirdiğiniz dosyayı `SHA256SUMS.txt` ile doğrulayabilirsiniz.
