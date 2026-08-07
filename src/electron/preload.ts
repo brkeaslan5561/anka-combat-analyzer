@@ -22,6 +22,7 @@ const api: AnalyzerApi = {
   clearData: () => ipcRenderer.invoke("clear-data"),
   startNewEncounter: () => ipcRenderer.invoke("start-new-encounter"),
   endEncounter: () => ipcRenderer.invoke("end-encounter"),
+  markEncounterFail: () => ipcRenderer.invoke("mark-encounter-fail"),
   getEntityDetail: (
     scopeId: string,
     splitPetDamage: boolean,
@@ -48,6 +49,14 @@ const api: AnalyzerApi = {
   toggleOverlay: () => ipcRenderer.invoke("toggle-overlay"),
   setOverlayEnabled: (enabled: boolean) =>
     ipcRenderer.invoke("set-overlay-enabled", enabled),
+  getUpdateStatus: () => ipcRenderer.invoke("get-update-status"),
+  downloadUpdate: () => ipcRenderer.invoke("download-update"),
+  minimizeWindow: () => ipcRenderer.invoke("window-minimize"),
+  toggleMaximizeWindow: () => ipcRenderer.invoke("window-toggle-maximize"),
+  isWindowMaximized: () => ipcRenderer.invoke("window-is-maximized"),
+  closeWindow: () => ipcRenderer.invoke("window-close"),
+  onWindowMaximizedChanged: (callback: (maximized: boolean) => void) =>
+    subscribe("window-maximized-changed", callback),
   onSnapshot: (callback: (snapshot: CombatSnapshot) => void) =>
     subscribe("combat-snapshot", callback),
   onStatus: (callback: (status: MonitorStatus) => void) =>

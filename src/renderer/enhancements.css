@@ -1,0 +1,215 @@
+.app-titlebar {
+  -webkit-app-region: drag;
+  user-select: none;
+  padding-right: 0 !important;
+}
+
+.app-titlebar button,
+.app-titlebar input,
+.app-titlebar select,
+.app-titlebar a,
+.titlebar-extras,
+.titlebar-extras * {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-version {
+  display: none !important;
+}
+
+.titlebar-extras {
+  margin-left: auto;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+}
+
+.update-status-button {
+  border: 0;
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+  background: transparent;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.update-status-button.current {
+  color: #16803d;
+  background: rgba(22, 128, 61, 0.08);
+}
+
+.update-status-button.available,
+.update-status-button.error {
+  color: #c7362f;
+  background: rgba(199, 54, 47, 0.08);
+}
+
+.update-status-button:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.update-status-button small {
+  opacity: 0.65;
+  font-size: 10px;
+}
+
+.update-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.window-controls {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+}
+
+.window-control {
+  width: 46px;
+  min-width: 46px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: default;
+  color: inherit;
+}
+
+.window-control:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.window-control.close:hover {
+  color: #fff;
+  background: #c42b1c;
+}
+
+.window-minimize-glyph {
+  width: 10px;
+  height: 1px;
+  background: currentColor;
+}
+
+.window-maximize-glyph {
+  width: 9px;
+  height: 9px;
+  border: 1px solid currentColor;
+}
+
+.window-restore-glyph {
+  width: 9px;
+  height: 9px;
+  border: 1px solid currentColor;
+  position: relative;
+  transform: translate(-1px, 1px);
+}
+
+.window-restore-glyph::before {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentColor;
+  left: 2px;
+  top: -4px;
+  z-index: -1;
+}
+
+.window-close-glyph {
+  width: 12px;
+  height: 12px;
+  position: relative;
+}
+
+.window-close-glyph::before,
+.window-close-glyph::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  width: 1px;
+  height: 12px;
+  background: currentColor;
+}
+
+.window-close-glyph::before {
+  transform: rotate(45deg);
+}
+
+.window-close-glyph::after {
+  transform: rotate(-45deg);
+}
+
+.encounter-browser {
+  display: flex;
+  flex-direction: column;
+}
+
+.encounter-tree {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.encounter-controls {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 5px;
+  padding: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.encounter-controls button {
+  min-height: 27px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.encounter-controls button:hover {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.22);
+}
+
+.encounter-controls button.fail {
+  color: #b42318;
+}
+
+.data-grid thead th.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.data-grid thead th.sortable-header::after {
+  content: "↕";
+  margin-left: 5px;
+  font-size: 9px;
+  opacity: 0.32;
+}
+
+.data-grid thead th.sortable-header[data-sort-direction="desc"]::after {
+  content: "▼";
+  opacity: 0.8;
+}
+
+.data-grid thead th.sortable-header[data-sort-direction="asc"]::after {
+  content: "▲";
+  opacity: 0.8;
+}
