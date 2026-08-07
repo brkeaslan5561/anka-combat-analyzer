@@ -1,23 +1,22 @@
-# Anka Combat Analyzer v1.1.0
+# Anka Combat Analyzer v1.1.1
 
-Encounter yönetimi, log yükleme, güncelleme sistemi ve Windows arayüzü için büyük iyileştirme sürümü.
+Encounter sınıflandırması ve manuel encounter kullanımı için hotfix.
 
-## Öne çıkanlar
+## Düzeltilenler
 
-- Son seçilen Neverwinter combat log klasörü artık hatırlanır ve sonraki açılışlarda log otomatik bulunup yüklenir.
-- Boss ve AOE encounter ayrımı geliştirildi; boss yanında add/mob dalgaları olsa da ana boss kalıcı hedef davranışıyla algılanabilir.
-- Boss öldüğünde boss encounter otomatik kapanır ve sonrasında kalan moblar yeni AOE encounter olarak ayrılır.
-- Boss öldürülmeden savaş terk edilip farklı bir dövüşe geçilirse encounter otomatik `FAIL · BOSS` olarak işaretlenir.
-- Encounters paneline manuel `+ New`, `End` ve `Fail` kontrolleri eklendi.
-- Analiz tablolarındaki sütun başlıklarına sıralama eklendi. Name alfabetik, sayısal sütunlar sayısal olarak artan/azalan sıralanabilir.
-- Sağ üstte uygulama sürüm durumu gösterilir: güncelse yeşil `Up to date`, yeni sürüm varsa kırmızı `Not up to date`.
-- Yeni sürüm mevcutsa Setup EXE uygulama içinden indirilebilir ve kurulum başlatılabilir.
-- Standart Windows başlık çubuğu kaldırıldı; küçültme, büyütme/geri alma ve kapatma kontrolleri doğrudan uygulama üst barına entegre edildi.
-- Boss + add, boss fail ve manuel encounter senaryoları için otomatik testler eklendi.
+- Uzun süren AOE savaşlarında tanky/elite mobların yanlışlıkla `BOSS` olarak işaretlenme ihtimali ciddi şekilde azaltıldı.
+- Aynı enemy archetype'tan birden fazla instance bulunan savaşlar otomatik boss tespitinde elenir.
+- Boss adayının encounter boyunca çok daha kalıcı olması ve diğer moblardan süre/hasar bakımından belirgin biçimde ayrışması gerekir.
+- Otomatik boss tespiti artık daha muhafazakâr çalışır; şüpheli durumlar `AOE` olarak bırakılır.
+- `+ New` butonuna basıldığında bir sonraki combat beklenmeden anında 0:00 süreli manuel encounter oluşturulur.
+- Yeni manuel encounter savaş başlamadan önce `MANUAL · ACTIVE · Waiting for combat` olarak Encounters listesinde görünür.
+- Manuel encounter aktifken `+ New` kontrolü yeşil `● Manual Active` durumuna geçer.
+- Manuel encounterlar otomatik boss sınıflandırmasına sokulmaz; kullanıcının oluşturduğu sınırlar korunur.
+- Boss + add, uzun AOE, tekrarlanan mob archetype'ları, fail ve combatsız manuel encounter senaryoları için regresyon testleri eklendi.
 
 ## İndirme
 
-- `Anka-Combat-Analyzer-Setup-1.1.0-x64.exe`: normal Windows kurulumu
-- `Anka-Combat-Analyzer-Portable-1.1.0-x64.exe`: kurulum gerektirmeyen sürüm
+- `Anka-Combat-Analyzer-Setup-1.1.1-x64.exe`: normal Windows kurulumu
+- `Anka-Combat-Analyzer-Portable-1.1.1-x64.exe`: kurulum gerektirmeyen sürüm
 
 Bu sürüm kod imzalama sertifikasıyla imzalanmamıştır. Windows SmartScreen ilk çalıştırmada “Bilinmeyen yayıncı” uyarısı gösterebilir. İndirdiğiniz dosyayı `SHA256SUMS.txt` ile doğrulayabilirsiniz.
