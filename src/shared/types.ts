@@ -342,8 +342,26 @@ export interface MonitorStatus {
   progress?: number;
 }
 
+export interface UpdateStatus {
+  state: "current" | "available" | "error";
+  currentVersion: string;
+  latestVersion?: string;
+  releaseName?: string;
+  releaseUrl?: string;
+  downloadUrl?: string;
+  assetName?: string;
+  message: string;
+}
+
+export interface UpdateDownloadResult {
+  success: boolean;
+  filePath?: string;
+  message: string;
+}
+
 export interface AppSettings {
   logFilePath?: string;
+  logDirectoryPath?: string;
   overlayEnabled: boolean;
   preferredPlayerId?: string;
   preferredPlayerName?: string;
@@ -362,6 +380,7 @@ export interface AnalyzerApi {
   clearData(): Promise<void>;
   startNewEncounter(): Promise<void>;
   endEncounter(): Promise<void>;
+  markEncounterFail(): Promise<void>;
   getEntityDetail(
     scopeId: string,
     splitPetDamage: boolean,
@@ -379,6 +398,13 @@ export interface AnalyzerApi {
   setPreferredPlayer(playerId: string, name: string): Promise<AppSettings>;
   toggleOverlay(): Promise<boolean>;
   setOverlayEnabled(enabled: boolean): Promise<boolean>;
+  getUpdateStatus(): Promise<UpdateStatus>;
+  downloadUpdate(): Promise<UpdateDownloadResult>;
+  minimizeWindow(): Promise<void>;
+  toggleMaximizeWindow(): Promise<boolean>;
+  isWindowMaximized(): Promise<boolean>;
+  closeWindow(): Promise<void>;
+  onWindowMaximizedChanged(callback: (maximized: boolean) => void): () => void;
   onSnapshot(callback: (snapshot: CombatSnapshot) => void): () => void;
   onStatus(callback: (status: MonitorStatus) => void): () => void;
   onTimerStarted(callback: (event: ActiveTimerEvent) => void): () => void;
