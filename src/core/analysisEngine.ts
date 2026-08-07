@@ -122,8 +122,16 @@ export class CombatAnalysisEngine {
     };
   }
 
+  startNewEncounter(): void {
+    this.encounterEngine.startNewEncounter();
+  }
+
   endEncounter(): void {
     this.encounterEngine.endCurrent();
+  }
+
+  markEncounterFail(): void {
+    this.encounterEngine.markCurrentFailed();
   }
 
   getEntityDetail(
