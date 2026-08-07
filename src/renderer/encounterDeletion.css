@@ -1,0 +1,47 @@
+.tree-branch.encounter-deletable {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 1px;
+  margin: 0 3px;
+}
+
+.tree-branch.encounter-deletable > .tree-row {
+  width: 100%;
+  margin: 0;
+}
+
+.tree-branch.encounter-hidden {
+  display: none;
+}
+
+.encounter-delete-button {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #7b858d;
+  background: transparent;
+  cursor: pointer;
+  font: 600 15px/1 Arial, sans-serif;
+  opacity: 0.18;
+}
+
+.tree-branch.encounter-deletable:hover .encounter-delete-button,
+.encounter-delete-button:focus-visible {
+  opacity: 0.78;
+}
+
+.encounter-delete-button:hover {
+  color: #fff;
+  background: #c83832;
+  opacity: 1 !important;
+}
+
+.encounter-delete-button:focus-visible {
+  outline: 1px solid #7c98ad;
+  outline-offset: 1px;
+}
