@@ -179,6 +179,7 @@ async function loadFile(filePath: string): Promise<void> {
       }
     }
 
+    if (activeGeneration !== generation) return;
     byteOffset = initialSize;
     lastCadenceRefresh = Date.now();
     postSnapshot(engine.snapshot(filePath, true));
@@ -193,6 +194,7 @@ async function loadFile(filePath: string): Promise<void> {
     });
     startPolling(activeGeneration);
   } catch (error) {
+    if (activeGeneration !== generation) return;
     postStatus({
       state: "error",
       filePath,
@@ -216,6 +218,7 @@ async function clearAndTail(): Promise<void> {
 
   try {
     const stat = await fs.stat(currentFilePath);
+    if (activeGeneration !== generation) return;
     byteOffset = stat.size;
     postSnapshot(engine.snapshot(currentFilePath, true));
     postStatus({
@@ -226,6 +229,7 @@ async function clearAndTail(): Promise<void> {
     });
     startPolling(activeGeneration);
   } catch (error) {
+    if (activeGeneration !== generation) return;
     postStatus({
       state: "error",
       filePath: currentFilePath,
@@ -285,6 +289,7 @@ async function pollForChanges(activeGeneration: number): Promise<void> {
 
   try {
     const stat = await fs.stat(currentFilePath);
+    if (activeGeneration !== generation) return;
     if (stat.size < byteOffset) {
       await loadFile(currentFilePath);
       return;
@@ -296,6 +301,8 @@ async function pollForChanges(activeGeneration: number): Promise<void> {
       byteOffset,
       stat.size - byteOffset,
     );
+    if (activeGeneration !== generation) return;
+
     byteOffset = stat.size;
     pendingText += decoder.write(buffer);
     const lines = pendingText.split(/\r?\n/);
@@ -307,10 +314,12 @@ async function pollForChanges(activeGeneration: number): Promise<void> {
       if (cast) postCast(cast);
     }
 
+    if (activeGeneration !== generation) return;
     const refreshCadence = Date.now() - lastCadenceRefresh >= 5_000;
     if (refreshCadence) lastCadenceRefresh = Date.now();
     postSnapshot(engine.snapshot(currentFilePath, refreshCadence));
   } catch (error) {
+    if (activeGeneration !== generation) return;
     postStatus({
       state: "error",
       filePath: currentFilePath,
