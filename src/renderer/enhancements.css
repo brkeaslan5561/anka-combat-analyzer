@@ -187,6 +187,17 @@
   border-color: rgba(0, 0, 0, 0.22);
 }
 
+.encounter-controls button.manual-active {
+  color: #147a3e;
+  border-color: rgba(20, 122, 62, 0.35);
+  background: rgba(20, 122, 62, 0.12);
+  font-weight: 700;
+}
+
+.encounter-controls button.manual-active:hover {
+  background: rgba(20, 122, 62, 0.18);
+}
+
 .encounter-controls button.fail {
   color: #b42318;
 }
