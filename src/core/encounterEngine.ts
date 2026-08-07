@@ -21,6 +21,15 @@ interface PhaseAccumulator {
   split: StatisticsAccumulator;
 }
 
+type EncounterKind = "aoe" | "boss";
+type EncounterResult = "active" | "success" | "fail" | "ended";
+
+interface EncounterTargetAccumulator {
+  name: string;
+  amount: number;
+  hits: number;
+}
+
 interface EncounterAccumulator {
   id: string;
   index: number;
@@ -30,11 +39,19 @@ interface EncounterAccumulator {
   merged: StatisticsAccumulator;
   split: StatisticsAccumulator;
   phases: PhaseAccumulator[];
+  damageTargets: Map<string, EncounterTargetAccumulator>;
+  hostileEvents: number;
+  kind: EncounterKind;
+  result: EncounterResult;
+  bossTargetId?: string;
+  bossTargetName?: string;
+  manual: boolean;
 }
 
 export class EncounterEngine {
   private readonly completed: EncounterAccumulator[] = [];
   private current: EncounterAccumulator | null = null;
+  private forceManualNext = false;
 
   constructor(
     private readonly inactivitySeconds = 20,
@@ -44,9 +61,22 @@ export class EncounterEngine {
   ingest(event: CombatEvent): void {
     const hostile = isHostileCombatEvent(event);
     const inactivityMs = this.inactivitySeconds * 1_000;
+    const phaseGapMs = this.phaseGapSeconds * 1_000;
 
-    if (
+    if (this.current && hostile && !this.current.manual) {
+      const hostileGap = event.timestamp - this.current.lastHostileAt;
+      if (
+        this.current.kind === "aoe" &&
+        this.current.hostileEvents > 0 &&
+        hostileGap > phaseGapMs
+      ) {
+        this.endCurrent();
+      } else if (hostileGap > inactivityMs) {
+        this.endCurrent();
+      }
+    } else if (
       this.current &&
+      !this.current.manual &&
       event.timestamp - this.current.lastHostileAt > inactivityMs
     ) {
       if (hostile) this.endCurrent();
@@ -55,10 +85,16 @@ export class EncounterEngine {
 
     if (!this.current) {
       if (!hostile) return;
-      this.current = this.createEncounter(event.timestamp);
+      this.current = this.createEncounter(event.timestamp, this.forceManualNext);
+      this.forceManualNext = false;
     }
 
-    if (hostile) this.ingestHostilePhase(event, this.current);
+    if (hostile) {
+      this.ingestHostilePhase(event, this.current);
+      this.ingestEncounterTarget(event, this.current);
+      this.current.hostileEvents += 1;
+      this.classifyEncounter(this.current, event);
+    }
 
     // Keep contextual events such as healing, shielding and resource changes in
     // the active encounter, but do not let unrelated aura lines hold it open.
@@ -69,6 +105,11 @@ export class EncounterEngine {
     activePhase?.split.ingest(event);
     if (hostile) {
       this.current.endedAt = Math.max(this.current.endedAt, event.timestamp);
+    }
+
+    if (hostile && !this.current.manual && this.isBossKill(event, this.current)) {
+      this.current.result = "success";
+      this.endCurrent(false);
     }
   }
 
@@ -147,8 +188,23 @@ export class EncounterEngine {
     return [];
   }
 
-  endCurrent(): void {
+  startNewEncounter(): void {
+    this.endCurrent();
+    this.forceManualNext = true;
+  }
+
+  markCurrentFailed(): void {
     if (!this.current) return;
+    this.current.result = "fail";
+    this.endCurrent(false);
+  }
+
+  endCurrent(applyFailCheck = true): void {
+    if (!this.current) return;
+    if (this.current.result === "active") {
+      this.current.result =
+        applyFailCheck && this.current.kind === "boss" ? "fail" : "ended";
+    }
     this.completed.push(this.current);
     this.current = null;
   }
@@ -156,9 +212,10 @@ export class EncounterEngine {
   reset(): void {
     this.completed.length = 0;
     this.current = null;
+    this.forceManualNext = false;
   }
 
-  private createEncounter(timestamp: number): EncounterAccumulator {
+  private createEncounter(timestamp: number, manual: boolean): EncounterAccumulator {
     const index = this.completed.length + 1;
     return {
       id: `encounter-${index}-${timestamp}`,
@@ -169,6 +226,11 @@ export class EncounterEngine {
       merged: new StatisticsAccumulator(false, 20_000),
       split: new StatisticsAccumulator(true, 20_000),
       phases: [],
+      damageTargets: new Map(),
+      hostileEvents: 0,
+      kind: "aoe",
+      result: "active",
+      manual,
     };
   }
 
@@ -203,7 +265,7 @@ export class EncounterEngine {
           ? event.target
           : null;
     if (!enemy) return;
-    const amount = isDamageToCreature(event) ? event.magnitude : 1;
+    const amount = isDamageToCreature(event) ? Math.max(1, event.magnitude) : 1;
     const target = phase.targets.get(enemy.stableId) ?? {
       name: enemy.displayName,
       amount: 0,
@@ -211,6 +273,77 @@ export class EncounterEngine {
     target.name = enemy.displayName;
     target.amount += amount;
     phase.targets.set(enemy.stableId, target);
+  }
+
+  private ingestEncounterTarget(
+    event: CombatEvent,
+    encounter: EncounterAccumulator,
+  ): void {
+    if (!isDamageToCreature(event) || event.target.kind !== "creature") return;
+    const amount = Math.max(0, event.magnitude);
+    if (amount <= 0) return;
+    const target = encounter.damageTargets.get(event.target.stableId) ?? {
+      name: event.target.displayName,
+      amount: 0,
+      hits: 0,
+    };
+    target.name = event.target.displayName;
+    target.amount += amount;
+    target.hits += 1;
+    encounter.damageTargets.set(event.target.stableId, target);
+  }
+
+  private classifyEncounter(
+    encounter: EncounterAccumulator,
+    event: CombatEvent,
+  ): void {
+    if (encounter.kind === "boss") return;
+    const targets = [...encounter.damageTargets.entries()];
+    if (targets.length === 0) return;
+    const totalDamage = targets.reduce((sum, [, target]) => sum + target.amount, 0);
+    if (totalDamage <= 0) return;
+    const dominant = targets.sort(
+      (left, right) => right[1].amount - left[1].amount,
+    )[0];
+    if (!dominant) return;
+    const [targetId, target] = dominant;
+    const share = target.amount / totalDamage;
+    const durationSeconds = Math.max(
+      0,
+      (event.timestamp - encounter.startedAt) / 1_000,
+    );
+    const killBoost =
+      hasKillFlag(event) &&
+      event.target.kind === "creature" &&
+      event.target.stableId === targetId;
+    const looksLikeBoss =
+      (durationSeconds >= 8 &&
+        encounter.hostileEvents >= 15 &&
+        target.hits >= 8 &&
+        share >= 0.62) ||
+      (killBoost &&
+        durationSeconds >= 4 &&
+        encounter.hostileEvents >= 8 &&
+        target.hits >= 5 &&
+        share >= 0.6);
+
+    if (!looksLikeBoss) return;
+    encounter.kind = "boss";
+    encounter.bossTargetId = targetId;
+    encounter.bossTargetName = target.name;
+  }
+
+  private isBossKill(
+    event: CombatEvent,
+    encounter: EncounterAccumulator,
+  ): boolean {
+    return (
+      encounter.kind === "boss" &&
+      Boolean(encounter.bossTargetId) &&
+      event.target.kind === "creature" &&
+      event.target.stableId === encounter.bossTargetId &&
+      hasKillFlag(event)
+    );
   }
 
   private getAll(): EncounterAccumulator[] {
@@ -226,9 +359,15 @@ export class EncounterEngine {
     );
     const merged = encounter.merged.build(durationSeconds, false, false);
     const split = encounter.split.build(durationSeconds, false, false);
-    const primaryTarget = encounter.phases
-      .flatMap((phase) => [...phase.targets.values()])
-      .sort((left, right) => right.amount - left.amount)[0]?.name;
+    const primaryTarget =
+      encounter.bossTargetName ??
+      encounter.phases
+        .flatMap((phase) => [...phase.targets.values()])
+        .sort((left, right) => right.amount - left.amount)[0]?.name ??
+      "Bilinmeyen hedef";
+    const typeLabel = encounter.kind === "boss" ? "BOSS" : "AOE";
+    const resultLabel = encounter.result === "fail" ? "FAIL · " : "";
+    const manualLabel = encounter.manual ? "MANUAL · " : "";
 
     return {
       id: encounter.id,
@@ -239,7 +378,7 @@ export class EncounterEngine {
       totalDamage: merged.totalDamage,
       totalHealing: merged.totalHealing,
       entityCount: merged.entities.length,
-      primaryTarget: primaryTarget ?? "Bilinmeyen hedef",
+      primaryTarget: `${resultLabel}${manualLabel}${typeLabel} · ${primaryTarget}`,
       phases: encounter.phases.map(toPhaseSummary),
       mergedEntities: [],
       splitEntities: [],
@@ -260,6 +399,10 @@ export class EncounterEngine {
         .sort((left, right) => right.damage - left.damage),
     };
   }
+}
+
+function hasKillFlag(event: CombatEvent): boolean {
+  return event.flags.some((flag) => flag.toLocaleLowerCase("en-US") === "kill");
 }
 
 function toPhaseSummary(phase: PhaseAccumulator): PhaseSummary {
