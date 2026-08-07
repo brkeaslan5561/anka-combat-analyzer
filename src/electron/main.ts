@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, screen } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  net,
+  screen,
+  shell,
+} from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
@@ -35,6 +43,38 @@ type WorkerMessage =
     }
   | { type: "cast"; cast: PowerCastEvent };
 
+interface GithubReleaseAsset {
+  name: string;
+  browser_download_url: string;
+}
+
+interface GithubRelease {
+  tag_name: string;
+  name: string;
+  html_url: string;
+  assets: GithubReleaseAsset[];
+}
+
+interface UpdateStatus {
+  state: "current" | "available" | "error";
+  currentVersion: string;
+  latestVersion?: string;
+  releaseName?: string;
+  releaseUrl?: string;
+  downloadUrl?: string;
+  assetName?: string;
+  message: string;
+}
+
+interface UpdateDownloadResult {
+  success: boolean;
+  filePath?: string;
+  message: string;
+}
+
+const UPDATE_REPOSITORY = "brkeaslan5561/anka-combat-analyzer";
+const UPDATE_CACHE_MS = 5 * 60 * 1_000;
+
 let mainWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let logWorker: Worker | null = null;
@@ -45,6 +85,8 @@ let latestStatus: MonitorStatus = {
   state: "idle",
   message: "Combatlog seçilmedi",
 };
+let cachedUpdateStatus: UpdateStatus | null = null;
+let cachedUpdateCheckedAt = 0;
 const lastRuleTriggers = new Map<string, number>();
 const detailRequests = new Map<
   string,
@@ -98,6 +140,7 @@ function createMainWindow(): void {
     title: "Anka Combat Analyzer",
     icon: getAppIconPath(),
     autoHideMenuBar: true,
+    frame: false,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -108,6 +151,12 @@ function createMainWindow(): void {
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.on("maximize", () => {
+    mainWindow?.webContents.send("window-maximized-changed", true);
+  });
+  mainWindow.on("unmaximize", () => {
+    mainWindow?.webContents.send("window-maximized-changed", false);
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -207,6 +256,9 @@ function registerIpcHandlers(): void {
     const options: Electron.OpenDialogOptions = {
       title: "Neverwinter Combatlog dosyasını seç",
       properties: ["openFile"],
+      defaultPath: settings.logFilePath
+        ? path.dirname(settings.logFilePath)
+        : undefined,
       filters: [
         { name: "Neverwinter Combat Log", extensions: ["log"] },
         { name: "Tüm dosyalar", extensions: ["*"] },
@@ -250,10 +302,13 @@ function registerIpcHandlers(): void {
     logWorker?.postMessage({ type: "reset" });
   });
   ipcMain.handle("start-new-encounter", () => {
-    logWorker?.postMessage({ type: "end-encounter" });
+    logWorker?.postMessage({ type: "start-new-encounter" });
   });
   ipcMain.handle("end-encounter", () => {
     logWorker?.postMessage({ type: "end-encounter" });
+  });
+  ipcMain.handle("mark-encounter-fail", () => {
+    logWorker?.postMessage({ type: "mark-encounter-fail" });
   });
   ipcMain.handle(
     "get-entity-detail",
@@ -365,6 +420,26 @@ function registerIpcHandlers(): void {
   ipcMain.handle("set-overlay-enabled", async (_event, enabled: boolean) => {
     return setOverlayVisible(enabled);
   });
+
+  ipcMain.handle("window-minimize", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+  ipcMain.handle("window-toggle-maximize", (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) return false;
+    if (window.isMaximized()) window.unmaximize();
+    else window.maximize();
+    return window.isMaximized();
+  });
+  ipcMain.handle("window-is-maximized", (event) => {
+    return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+  });
+  ipcMain.handle("window-close", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+
+  ipcMain.handle("get-update-status", async () => checkForUpdates());
+  ipcMain.handle("download-update", async () => downloadLatestUpdate());
 }
 
 function loadLogFile(filePath: string): void {
@@ -422,6 +497,126 @@ async function setOverlayVisible(enabled: boolean): Promise<boolean> {
     window.hide();
   }
   return enabled;
+}
+
+async function checkForUpdates(force = false): Promise<UpdateStatus> {
+  const now = Date.now();
+  if (
+    !force &&
+    cachedUpdateStatus &&
+    now - cachedUpdateCheckedAt < UPDATE_CACHE_MS
+  ) {
+    return cachedUpdateStatus;
+  }
+
+  const currentVersion = app.getVersion();
+  try {
+    const response = await net.fetch(
+      `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "User-Agent": "Anka-Combat-Analyzer",
+        },
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`GitHub update check failed (${response.status})`);
+    }
+    const release = (await response.json()) as GithubRelease;
+    const latestVersion = normalizeVersion(release.tag_name);
+    const installer =
+      release.assets.find(
+        (asset) =>
+          /setup/i.test(asset.name) && asset.name.toLowerCase().endsWith(".exe"),
+      ) ?? release.assets.find((asset) => asset.name.toLowerCase().endsWith(".exe"));
+    const available = compareVersions(latestVersion, currentVersion) > 0;
+    cachedUpdateStatus = {
+      state: available ? "available" : "current",
+      currentVersion,
+      latestVersion,
+      releaseName: release.name,
+      releaseUrl: release.html_url,
+      downloadUrl: installer?.browser_download_url,
+      assetName: installer?.name,
+      message: available
+        ? `v${latestVersion} hazır`
+        : `v${currentVersion} güncel`,
+    };
+    cachedUpdateCheckedAt = now;
+    return cachedUpdateStatus;
+  } catch (error) {
+    cachedUpdateStatus = {
+      state: "error",
+      currentVersion,
+      message: error instanceof Error ? error.message : String(error),
+    };
+    cachedUpdateCheckedAt = now;
+    return cachedUpdateStatus;
+  }
+}
+
+async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
+  const update = await checkForUpdates(true);
+  if (update.state === "error") {
+    return { success: false, message: update.message };
+  }
+  if (update.state !== "available") {
+    return { success: false, message: "Uygulama zaten güncel." };
+  }
+  if (!update.downloadUrl || !update.assetName) {
+    if (update.releaseUrl) await shell.openExternal(update.releaseUrl);
+    return {
+      success: false,
+      message: "Kurulum dosyası bulunamadı; release sayfası açıldı.",
+    };
+  }
+
+  try {
+    const response = await net.fetch(update.downloadUrl, {
+      headers: { "User-Agent": "Anka-Combat-Analyzer" },
+    });
+    if (!response.ok) {
+      throw new Error(`Update download failed (${response.status})`);
+    }
+    const destination = path.join(app.getPath("downloads"), update.assetName);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    await fs.writeFile(destination, bytes);
+    const openError = await shell.openPath(destination);
+    if (openError) {
+      return {
+        success: true,
+        filePath: destination,
+        message: `Güncelleme indirildi: ${destination}`,
+      };
+    }
+    return {
+      success: true,
+      filePath: destination,
+      message: "Güncelleme indirildi ve kurulum başlatıldı.",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function normalizeVersion(version: string): string {
+  return version.trim().replace(/^v/i, "");
+}
+
+function compareVersions(left: string, right: string): number {
+  const leftParts = normalizeVersion(left).split(".").map(Number);
+  const rightParts = normalizeVersion(right).split(".").map(Number);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftValue = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
+    const rightValue = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
+    if (leftValue !== rightValue) return leftValue > rightValue ? 1 : -1;
+  }
+  return 0;
 }
 
 function sendToWindows(channel: string, payload: unknown): void {
