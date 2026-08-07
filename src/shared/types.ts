@@ -263,6 +263,9 @@ export interface EncounterSummary {
   totalHealing: number;
   entityCount: number;
   primaryTarget: string;
+  bossTargetId?: string;
+  bossStableId?: string;
+  bossTargetName?: string;
   phases: PhaseSummary[];
   mergedEntities: EntityAnalysis[];
   splitEntities: EntityAnalysis[];
