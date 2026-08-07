@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { UpdateStatus } from "../shared/types";
+import type { CombatSnapshot, UpdateStatus } from "../shared/types";
 
 export function DesktopEnhancements() {
   useSortableTables();
@@ -92,9 +92,7 @@ function TitlebarExtras() {
       >
         <span className="update-status-dot" />
         <span>{updateLabel}</span>
-        {update?.currentVersion && (
-          <small>v{update.currentVersion}</small>
-        )}
+        {update?.currentVersion && <small>v{update.currentVersion}</small>}
       </button>
       <div className="window-controls" aria-label="Window controls">
         <button
@@ -113,7 +111,11 @@ function TitlebarExtras() {
             void window.analyzer.toggleMaximizeWindow().then(setMaximized);
           }}
         >
-          <span className={maximized ? "window-restore-glyph" : "window-maximize-glyph"} />
+          <span
+            className={
+              maximized ? "window-restore-glyph" : "window-maximize-glyph"
+            }
+          />
         </button>
         <button
           className="window-control close"
@@ -129,19 +131,55 @@ function TitlebarExtras() {
 }
 
 function EncounterControls() {
+  const [manualActive, setManualActive] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const updateManualState = (snapshot: CombatSnapshot | null) => {
+      const last = snapshot?.encounters.at(-1);
+      const active = Boolean(
+        last?.primaryTarget.includes("MANUAL · ACTIVE"),
+      );
+      if (mounted) setManualActive(active);
+    };
+
+    void window.analyzer.getInitialState().then((state) => {
+      updateManualState(state.snapshot);
+    });
+    const unsubscribe = window.analyzer.onSnapshot(updateManualState);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
   const run = async (action: "start" | "end" | "fail") => {
-    if (action === "start") await window.analyzer.startNewEncounter();
-    if (action === "end") await window.analyzer.endEncounter();
-    if (action === "fail") await window.analyzer.markEncounterFail();
+    if (action === "start") {
+      setManualActive(true);
+      await window.analyzer.startNewEncounter();
+    }
+    if (action === "end") {
+      setManualActive(false);
+      await window.analyzer.endEncounter();
+    }
+    if (action === "fail") {
+      setManualActive(false);
+      await window.analyzer.markEncounterFail();
+    }
   };
 
   return (
     <div className="encounter-controls">
       <button
-        title="End the current encounter and make the next combat a manual encounter"
+        className={manualActive ? "manual-active" : ""}
+        title={
+          manualActive
+            ? "A manual encounter is active"
+            : "Create a manual encounter immediately"
+        }
         onClick={() => void run("start")}
       >
-        + New
+        {manualActive ? "● Manual Active" : "+ New"}
       </button>
       <button
         title="End the current encounter now"
@@ -267,20 +305,24 @@ function applyTableSort(table: HTMLTableElement) {
     const leftText = left.cells[column]?.textContent?.trim() ?? "";
     const rightText = right.cells[column]?.textContent?.trim() ?? "";
     if (nameSort) {
-      return leftText.localeCompare(rightText, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      }) * direction;
+      return (
+        leftText.localeCompare(rightText, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        }) * direction
+      );
     }
     const leftNumber = parseSortableNumber(leftText);
     const rightNumber = parseSortableNumber(rightText);
     if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
       return (leftNumber - rightNumber) * direction;
     }
-    return leftText.localeCompare(rightText, undefined, {
-      numeric: true,
-      sensitivity: "base",
-    }) * direction;
+    return (
+      leftText.localeCompare(rightText, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }) * direction
+    );
   });
 
   for (const row of [...pinned, ...sortable]) tbody.appendChild(row);

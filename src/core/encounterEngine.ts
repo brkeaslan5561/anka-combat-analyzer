@@ -55,7 +55,6 @@ interface EncounterAccumulator {
 export class EncounterEngine {
   private readonly completed: EncounterAccumulator[] = [];
   private current: EncounterAccumulator | null = null;
-  private forceManualNext = false;
 
   constructor(
     private readonly inactivitySeconds = 20,
@@ -66,6 +65,12 @@ export class EncounterEngine {
     const hostile = isHostileCombatEvent(event);
     const inactivityMs = this.inactivitySeconds * 1_000;
     const phaseGapMs = this.phaseGapSeconds * 1_000;
+
+    // A manual encounter is created immediately when the user presses + New.
+    // Do not pollute its zero-length waiting state with unrelated aura/heal lines.
+    if (this.current?.manual && this.current.hostileEvents === 0 && !hostile) {
+      return;
+    }
 
     if (this.current && hostile && !this.current.manual) {
       const hostileGap = event.timestamp - this.current.lastHostileAt;
@@ -97,8 +102,15 @@ export class EncounterEngine {
 
     if (!this.current) {
       if (!hostile) return;
-      this.current = this.createEncounter(event.timestamp, this.forceManualNext);
-      this.forceManualNext = false;
+      this.current = this.createEncounter(event.timestamp, false);
+    }
+
+    // The placeholder uses wall-clock time only to make the row visible. Reset
+    // combat timing to the first actual hostile event when combat arrives.
+    if (hostile && this.current.manual && this.current.hostileEvents === 0) {
+      this.current.startedAt = event.timestamp;
+      this.current.endedAt = event.timestamp;
+      this.current.lastHostileAt = event.timestamp;
     }
 
     if (hostile) {
@@ -108,8 +120,6 @@ export class EncounterEngine {
       this.classifyEncounter(this.current, event);
     }
 
-    // Keep contextual events such as healing, shielding and resource changes in
-    // the active encounter, but do not let unrelated aura lines hold it open.
     this.current.merged.ingest(event);
     this.current.split.ingest(event);
     const activePhase = this.current.phases.at(-1);
@@ -132,8 +142,7 @@ export class EncounterEngine {
   getActiveCombatSeconds(): number {
     return this.getAll().reduce(
       (sum, encounter) =>
-        sum +
-        Math.max(1, (encounter.endedAt - encounter.startedAt) / 1_000),
+        sum + Math.max(0, (encounter.endedAt - encounter.startedAt) / 1_000),
       0,
     );
   }
@@ -202,7 +211,7 @@ export class EncounterEngine {
 
   startNewEncounter(): void {
     this.endCurrent();
-    this.forceManualNext = true;
+    this.current = this.createEncounter(Date.now(), true);
   }
 
   markCurrentFailed(): void {
@@ -224,7 +233,6 @@ export class EncounterEngine {
   reset(): void {
     this.completed.length = 0;
     this.current = null;
-    this.forceManualNext = false;
   }
 
   private createEncounter(timestamp: number, manual: boolean): EncounterAccumulator {
@@ -317,12 +325,20 @@ export class EncounterEngine {
     encounter: EncounterAccumulator,
     event: CombatEvent,
   ): void {
-    if (encounter.kind === "boss") return;
+    if (encounter.kind === "boss" || encounter.manual) return;
     const targets = [...encounter.damageTargets.entries()];
     if (targets.length === 0) return;
     const totalDamage = targets.reduce((sum, [, target]) => sum + target.amount, 0);
     const totalHits = targets.reduce((sum, [, target]) => sum + target.hits, 0);
     if (totalDamage <= 0 || totalHits <= 0) return;
+
+    const stableIdCounts = new Map<string, number>();
+    for (const [, target] of targets) {
+      stableIdCounts.set(
+        target.stableId,
+        (stableIdCounts.get(target.stableId) ?? 0) + 1,
+      );
+    }
 
     const durationMs = Math.max(1, event.timestamp - encounter.startedAt);
     const candidates = targets
@@ -332,7 +348,7 @@ export class EncounterEngine {
         const hitShare = target.hits / totalHits;
         const spanRatio = targetSpanMs / durationMs;
         const persistenceScore =
-          spanRatio * 0.5 + Math.min(1, target.hits / 20) * 0.3 + hitShare * 0.2;
+          spanRatio * 0.55 + Math.min(1, target.hits / 30) * 0.25 + hitShare * 0.2;
         return {
           targetId,
           target,
@@ -341,35 +357,51 @@ export class EncounterEngine {
           hitShare,
           spanRatio,
           persistenceScore,
+          uniqueArchetype: (stableIdCounts.get(target.stableId) ?? 0) === 1,
         };
       })
       .sort((left, right) => right.persistenceScore - left.persistenceScore);
     const candidate = candidates[0];
-    if (!candidate) return;
+    if (!candidate || !candidate.uniqueArchetype) return;
 
     const durationSeconds = durationMs / 1_000;
     const targetSpanSeconds = candidate.targetSpanMs / 1_000;
+    const secondLongestSpanMs = candidates
+      .slice(1)
+      .reduce((max, item) => Math.max(max, item.targetSpanMs), 0);
+    const persistenceLeadSeconds =
+      (candidate.targetSpanMs - secondLongestSpanMs) / 1_000;
+    const otherTargets = candidates.slice(1).map((item) => item.target.amount);
+    const medianOtherDamage = median(otherTargets);
+    const damageLead =
+      medianOtherDamage > 0 ? candidate.target.amount / medianOtherDamage : Infinity;
+    const clearBossShape =
+      candidate.share >= 0.58 ||
+      (persistenceLeadSeconds >= 8 && damageLead >= 2.5) ||
+      (durationSeconds >= 45 && persistenceLeadSeconds >= 6 && damageLead >= 2);
     const killBoost =
       hasKillFlag(event) &&
       event.target.kind === "creature" &&
       event.target.instanceId === candidate.targetId;
 
-    // Bosses can have add waves. Persistence and repeated targeting therefore
-    // matter more than requiring a very high single-target damage percentage.
+    // Prefer false negatives over false positives. A long-lived elite in a trash
+    // pull must not become a boss unless it is clearly separated from the pack.
     const persistentBoss =
-      durationSeconds >= 10 &&
-      targetSpanSeconds >= 8 &&
-      candidate.spanRatio >= 0.72 &&
-      candidate.target.hits >= 10 &&
-      encounter.hostileEvents >= 15 &&
-      (candidate.share >= 0.25 || candidate.hitShare >= 0.3);
+      durationSeconds >= 35 &&
+      targetSpanSeconds >= 30 &&
+      candidate.spanRatio >= 0.86 &&
+      candidate.target.hits >= 28 &&
+      encounter.hostileEvents >= 45 &&
+      clearBossShape &&
+      (candidate.share >= 0.36 || candidate.hitShare >= 0.42);
     const killedBossCandidate =
       killBoost &&
-      durationSeconds >= 5 &&
-      targetSpanSeconds >= 4 &&
-      candidate.spanRatio >= 0.65 &&
-      candidate.target.hits >= 6 &&
-      (candidate.share >= 0.18 || candidate.hitShare >= 0.25);
+      durationSeconds >= 22 &&
+      targetSpanSeconds >= 18 &&
+      candidate.spanRatio >= 0.82 &&
+      candidate.target.hits >= 18 &&
+      clearBossShape &&
+      (candidate.share >= 0.34 || candidate.hitShare >= 0.4);
 
     if (!persistentBoss && !killedBossCandidate) return;
     encounter.kind = "boss";
@@ -411,20 +443,25 @@ export class EncounterEngine {
 
   private toSummary(encounter: EncounterAccumulator): EncounterSummary {
     const durationSeconds = Math.max(
-      1,
+      0,
       (encounter.endedAt - encounter.startedAt) / 1_000,
     );
-    const merged = encounter.merged.build(durationSeconds, false, false);
-    const split = encounter.split.build(durationSeconds, false, false);
+    const statisticsDuration = Math.max(1, durationSeconds);
+    const merged = encounter.merged.build(statisticsDuration, false, false);
+    const split = encounter.split.build(statisticsDuration, false, false);
+    const waitingForCombat = encounter.manual && encounter.hostileEvents === 0;
     const primaryTarget =
       encounter.bossTargetName ??
       encounter.phases
         .flatMap((phase) => [...phase.targets.values()])
         .sort((left, right) => right.amount - left.amount)[0]?.name ??
-      "Bilinmeyen hedef";
+      (waitingForCombat ? "Waiting for combat" : "Bilinmeyen hedef");
     const typeLabel = encounter.kind === "boss" ? "BOSS" : "AOE";
     const resultLabel = encounter.result === "fail" ? "FAIL · " : "";
     const manualLabel = encounter.manual ? "MANUAL · " : "";
+    const activeLabel =
+      encounter.manual && encounter.result === "active" ? "ACTIVE · " : "";
+    const typePrefix = waitingForCombat ? "" : `${typeLabel} · `;
 
     return {
       id: encounter.id,
@@ -435,7 +472,7 @@ export class EncounterEngine {
       totalDamage: merged.totalDamage,
       totalHealing: merged.totalHealing,
       entityCount: merged.entities.length,
-      primaryTarget: `${resultLabel}${manualLabel}${typeLabel} · ${primaryTarget}`,
+      primaryTarget: `${resultLabel}${manualLabel}${activeLabel}${typePrefix}${primaryTarget}`,
       phases: encounter.phases.map(toPhaseSummary),
       mergedEntities: [],
       splitEntities: [],
@@ -460,6 +497,15 @@ export class EncounterEngine {
 
 function hasKillFlag(event: CombatEvent): boolean {
   return event.flags.some((flag) => flag.toLocaleLowerCase("en-US") === "kill");
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
+    : (sorted[middle] ?? 0);
 }
 
 function toPhaseSummary(phase: PhaseAccumulator): PhaseSummary {
