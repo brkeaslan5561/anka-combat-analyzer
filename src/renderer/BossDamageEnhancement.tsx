@@ -28,18 +28,15 @@ export function BossDamageEnhancement() {
       if (!snapshot) return null;
       const tree = document.querySelector<HTMLElement>(".encounter-tree");
       if (!tree) return null;
-
       const selected = tree.querySelector<HTMLElement>(
         ":scope > .tree-branch > .tree-row.selected",
       );
       if (!selected) return null;
-
       const branch = selected.parentElement as HTMLElement | null;
       const encounterId = branch?.dataset.encounterId;
       if (encounterId) {
         return snapshot.encounters.find((item) => item.id === encounterId) ?? null;
       }
-
       const branches = Array.from(
         tree.querySelectorAll<HTMLElement>(":scope > .tree-branch"),
       );
@@ -50,7 +47,7 @@ export function BossDamageEnhancement() {
     const schedule = () => {
       if (scheduled || disposed) return;
       scheduled = true;
-      window.requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
         scheduled = false;
         void refresh();
       });
@@ -63,7 +60,7 @@ export function BossDamageEnhancement() {
       }
 
       const encounter = selectedEncounter();
-      if (!encounter || !isBossEncounter(encounter.primaryTarget)) {
+      if (!encounter?.bossTargetId || !encounter.bossTargetName) {
         cached = null;
         loadingKey = "";
         clearBossColumns();
@@ -71,23 +68,27 @@ export function BossDamageEnhancement() {
       }
 
       const key = `${encounter.id}:${snapshot.generatedAt}`;
+      const table = rankingTable();
+      if (
+        cached?.encounterId === encounter.id &&
+        cached.generatedAt === snapshot.generatedAt &&
+        table?.dataset.bossDamageVersion === key
+      ) {
+        return;
+      }
       if (
         cached?.encounterId === encounter.id &&
         cached.generatedAt === snapshot.generatedAt
       ) {
-        decorateBossColumns(cached);
+        decorateBossColumns(cached, key);
         return;
       }
       if (loadingKey === key) return;
       loadingKey = key;
 
       try {
-        const summaries = await window.analyzer.getScopeEntities(
-          encounter.id,
-          false,
-        );
+        const summaries = await window.analyzer.getScopeEntities(encounter.id, false);
         if (disposed || loadingKey !== key) return;
-
         const players = summaries.filter(
           (entity) => entity.kind === "player" && entity.outgoingDamage > 0,
         );
@@ -98,14 +99,13 @@ export function BossDamageEnhancement() {
         );
         if (disposed || loadingKey !== key) return;
 
-        const bossName = extractBossName(encounter.primaryTarget);
         const rawRows = details
           .filter((detail): detail is EntityAnalysis => Boolean(detail))
           .map((detail) => ({
             playerId: detail.entityId,
             name: detail.name,
             damage: detail.singleTargetDamage
-              .filter((target) => sameTargetName(target.name, bossName))
+              .filter((target) => target.entityId === encounter.bossTargetId)
               .reduce((sum, target) => sum + target.amount, 0),
           }))
           .filter((row) => row.damage > 0);
@@ -114,7 +114,7 @@ export function BossDamageEnhancement() {
         cached = {
           encounterId: encounter.id,
           generatedAt: snapshot.generatedAt,
-          bossName,
+          bossName: encounter.bossTargetName,
           totalDamage,
           rows: rawRows
             .map((row) => ({
@@ -123,7 +123,7 @@ export function BossDamageEnhancement() {
             }))
             .sort((left, right) => right.damage - left.damage),
         };
-        decorateBossColumns(cached);
+        decorateBossColumns(cached, key);
       } finally {
         if (loadingKey === key) loadingKey = "";
       }
@@ -160,12 +160,9 @@ export function BossDamageEnhancement() {
   return null;
 }
 
-function decorateBossColumns(view: BossDamageView): void {
-  const table = document.querySelector<HTMLTableElement>(
-    ".analysis-pane table.ranking-grid",
-  );
+function decorateBossColumns(view: BossDamageView, version: string): void {
+  const table = rankingTable();
   if (!table) return;
-
   const headerRow = table.tHead?.rows[0];
   const body = table.tBodies[0];
   if (!headerRow || !body) return;
@@ -173,16 +170,16 @@ function decorateBossColumns(view: BossDamageView): void {
   removeBossCells(table);
 
   const damageHeader = document.createElement("th");
-  damageHeader.className = "boss-damage-column";
   damageHeader.dataset.bossMetric = "damage";
+  damageHeader.className = "boss-damage-column sortable-header";
   damageHeader.textContent = "Boss Damage";
   damageHeader.title = `${view.bossName} only; add damage is excluded`;
 
   const shareHeader = document.createElement("th");
-  shareHeader.className = "boss-share-column";
   shareHeader.dataset.bossMetric = "share";
+  shareHeader.className = "boss-share-column sortable-header";
   shareHeader.textContent = "Boss %";
-  shareHeader.title = `Share of all player damage dealt directly to ${view.bossName}`;
+  shareHeader.title = `Player share of all damage dealt directly to ${view.bossName}`;
 
   insertAfterColumn(headerRow, 2, damageHeader);
   insertAfterColumn(headerRow, 3, shareHeader);
@@ -193,17 +190,15 @@ function decorateBossColumns(view: BossDamageView): void {
 
   for (const row of Array.from(body.rows)) {
     const damageCell = document.createElement("td");
-    damageCell.className = "boss-damage-column";
     damageCell.dataset.bossMetric = "damage";
+    damageCell.className = "boss-damage-column";
     const shareCell = document.createElement("td");
-    shareCell.className = "boss-share-column";
     shareCell.dataset.bossMetric = "share";
+    shareCell.className = "boss-share-column";
 
     if (row.classList.contains("aggregate-row")) {
       damageCell.textContent = formatNumber(view.totalDamage);
       shareCell.textContent = view.totalDamage > 0 ? "100,0%" : "—";
-      damageCell.title = `${view.bossName} total player damage`;
-      shareCell.title = `${view.bossName} total player share`;
     } else {
       const name = row.querySelector<HTMLElement>(".name-cell strong")?.textContent ?? "";
       const player = byName.get(normalizeName(name));
@@ -221,15 +216,21 @@ function decorateBossColumns(view: BossDamageView): void {
   }
 
   table.dataset.bossDamageEncounter = view.encounterId;
+  table.dataset.bossDamageVersion = version;
+}
+
+function rankingTable(): HTMLTableElement | null {
+  return document.querySelector<HTMLTableElement>(
+    ".analysis-pane table.ranking-grid",
+  );
 }
 
 function clearBossColumns(): void {
-  const table = document.querySelector<HTMLTableElement>(
-    ".analysis-pane table.ranking-grid",
-  );
+  const table = rankingTable();
   if (!table) return;
   removeBossCells(table);
   delete table.dataset.bossDamageEncounter;
+  delete table.dataset.bossDamageVersion;
 }
 
 function removeBossCells(table: HTMLTableElement): void {
@@ -245,27 +246,6 @@ function insertAfterColumn(
 ): void {
   const reference = row.cells[columnIndex + 1] ?? null;
   row.insertBefore(cell, reference);
-}
-
-function isBossEncounter(label: string): boolean {
-  return label.split(" · ").some((part) => part.trim() === "BOSS");
-}
-
-function extractBossName(label: string): string {
-  const parts = label.split(" · ").map((part) => part.trim()).filter(Boolean);
-  const bossIndex = parts.indexOf("BOSS");
-  return bossIndex >= 0 ? parts.slice(bossIndex + 1).join(" · ") : parts.at(-1) ?? label;
-}
-
-function sameTargetName(left: string, right: string): boolean {
-  return normalizeTargetName(left) === normalizeTargetName(right);
-}
-
-function normalizeTargetName(value: string): string {
-  return value
-    .replace(/\s+\[\d+\]\s*$/, "")
-    .trim()
-    .toLocaleLowerCase("en-US");
 }
 
 function normalizeName(value: string): string {
