@@ -28,6 +28,8 @@ interface EncounterTargetAccumulator {
   name: string;
   amount: number;
   hits: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
 }
 
 interface EncounterAccumulator {
@@ -286,10 +288,14 @@ export class EncounterEngine {
       name: event.target.displayName,
       amount: 0,
       hits: 0,
+      firstSeenAt: event.timestamp,
+      lastSeenAt: event.timestamp,
     };
     target.name = event.target.displayName;
     target.amount += amount;
     target.hits += 1;
+    target.firstSeenAt = Math.min(target.firstSeenAt, event.timestamp);
+    target.lastSeenAt = Math.max(target.lastSeenAt, event.timestamp);
     encounter.damageTargets.set(event.target.stableId, target);
   }
 
@@ -301,36 +307,60 @@ export class EncounterEngine {
     const targets = [...encounter.damageTargets.entries()];
     if (targets.length === 0) return;
     const totalDamage = targets.reduce((sum, [, target]) => sum + target.amount, 0);
-    if (totalDamage <= 0) return;
-    const dominant = targets.sort(
-      (left, right) => right[1].amount - left[1].amount,
-    )[0];
-    if (!dominant) return;
-    const [targetId, target] = dominant;
-    const share = target.amount / totalDamage;
-    const durationSeconds = Math.max(
-      0,
-      (event.timestamp - encounter.startedAt) / 1_000,
-    );
+    const totalHits = targets.reduce((sum, [, target]) => sum + target.hits, 0);
+    if (totalDamage <= 0 || totalHits <= 0) return;
+
+    const durationMs = Math.max(1, event.timestamp - encounter.startedAt);
+    const candidates = targets
+      .map(([targetId, target]) => {
+        const targetSpanMs = Math.max(0, target.lastSeenAt - target.firstSeenAt);
+        const share = target.amount / totalDamage;
+        const hitShare = target.hits / totalHits;
+        const spanRatio = targetSpanMs / durationMs;
+        const persistenceScore =
+          spanRatio * 0.5 + Math.min(1, target.hits / 20) * 0.3 + hitShare * 0.2;
+        return {
+          targetId,
+          target,
+          targetSpanMs,
+          share,
+          hitShare,
+          spanRatio,
+          persistenceScore,
+        };
+      })
+      .sort((left, right) => right.persistenceScore - left.persistenceScore);
+    const candidate = candidates[0];
+    if (!candidate) return;
+
+    const durationSeconds = durationMs / 1_000;
+    const targetSpanSeconds = candidate.targetSpanMs / 1_000;
     const killBoost =
       hasKillFlag(event) &&
       event.target.kind === "creature" &&
-      event.target.stableId === targetId;
-    const looksLikeBoss =
-      (durationSeconds >= 8 &&
-        encounter.hostileEvents >= 15 &&
-        target.hits >= 8 &&
-        share >= 0.62) ||
-      (killBoost &&
-        durationSeconds >= 4 &&
-        encounter.hostileEvents >= 8 &&
-        target.hits >= 5 &&
-        share >= 0.6);
+      event.target.stableId === candidate.targetId;
 
-    if (!looksLikeBoss) return;
+    // Bosses can have add waves. Persistence and repeated targeting therefore
+    // matter more than requiring a very high single-target damage percentage.
+    const persistentBoss =
+      durationSeconds >= 10 &&
+      targetSpanSeconds >= 8 &&
+      candidate.spanRatio >= 0.72 &&
+      candidate.target.hits >= 10 &&
+      encounter.hostileEvents >= 15 &&
+      (candidate.share >= 0.25 || candidate.hitShare >= 0.3);
+    const killedBossCandidate =
+      killBoost &&
+      durationSeconds >= 5 &&
+      targetSpanSeconds >= 4 &&
+      candidate.spanRatio >= 0.65 &&
+      candidate.target.hits >= 6 &&
+      (candidate.share >= 0.18 || candidate.hitShare >= 0.25);
+
+    if (!persistentBoss && !killedBossCandidate) return;
     encounter.kind = "boss";
-    encounter.bossTargetId = targetId;
-    encounter.bossTargetName = target.name;
+    encounter.bossTargetId = candidate.targetId;
+    encounter.bossTargetName = candidate.target.name;
   }
 
   private isBossKill(
