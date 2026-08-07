@@ -13,7 +13,9 @@ import type {
 type IncomingMessage =
   | { type: "load"; filePath: string }
   | { type: "reset" }
+  | { type: "start-new-encounter" }
   | { type: "end-encounter" }
+  | { type: "mark-encounter-fail" }
   | {
       type: "entity-detail";
       requestId: string;
@@ -70,8 +72,14 @@ parentPort.on("message", (message: IncomingMessage) => {
   } else if (message.type === "reset") {
     engine.reset();
     if (currentFilePath) postSnapshot(engine.snapshot(currentFilePath, true));
+  } else if (message.type === "start-new-encounter") {
+    engine.startNewEncounter();
+    if (currentFilePath) postSnapshot(engine.snapshot(currentFilePath, false));
   } else if (message.type === "end-encounter") {
     engine.endEncounter();
+    if (currentFilePath) postSnapshot(engine.snapshot(currentFilePath, false));
+  } else if (message.type === "mark-encounter-fail") {
+    engine.markEncounterFail();
     if (currentFilePath) postSnapshot(engine.snapshot(currentFilePath, false));
   } else if (message.type === "entity-detail") {
     post({
