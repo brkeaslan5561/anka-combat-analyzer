@@ -112,8 +112,19 @@ app.whenReady().then(async () => {
   createLogWorker();
 
   if (settings.overlayEnabled) setOverlayVisible(true);
-  if (settings.logFilePath && (await fileExists(settings.logFilePath))) {
-    loadLogFile(settings.logFilePath);
+  const rememberedLog = await resolveRememberedLogPath();
+  if (rememberedLog) {
+    const directory = path.dirname(rememberedLog);
+    if (
+      settings.logFilePath !== rememberedLog ||
+      settings.logDirectoryPath !== directory
+    ) {
+      settings = await settingsStore.update({
+        logFilePath: rememberedLog,
+        logDirectoryPath: directory,
+      });
+    }
+    loadLogFile(rememberedLog);
   }
 
   app.on("activate", () => {
@@ -256,9 +267,9 @@ function registerIpcHandlers(): void {
     const options: Electron.OpenDialogOptions = {
       title: "Neverwinter Combatlog dosyasını seç",
       properties: ["openFile"],
-      defaultPath: settings.logFilePath
-        ? path.dirname(settings.logFilePath)
-        : undefined,
+      defaultPath:
+        settings.logDirectoryPath ??
+        (settings.logFilePath ? path.dirname(settings.logFilePath) : undefined),
       filters: [
         { name: "Neverwinter Combat Log", extensions: ["log"] },
         { name: "Tüm dosyalar", extensions: ["*"] },
@@ -269,7 +280,10 @@ function registerIpcHandlers(): void {
       : await dialog.showOpenDialog(options);
     if (result.canceled || !result.filePaths[0]) return null;
     const filePath = result.filePaths[0];
-    settings = await settingsStore.update({ logFilePath: filePath });
+    settings = await settingsStore.update({
+      logFilePath: filePath,
+      logDirectoryPath: path.dirname(filePath),
+    });
     loadLogFile(filePath);
     return filePath;
   });
@@ -497,6 +511,102 @@ async function setOverlayVisible(enabled: boolean): Promise<boolean> {
     window.hide();
   }
   return enabled;
+}
+
+async function resolveRememberedLogPath(): Promise<string | null> {
+  if (settings.logFilePath && (await fileExists(settings.logFilePath))) {
+    return settings.logFilePath;
+  }
+
+  const directories = [
+    settings.logDirectoryPath,
+    settings.logFilePath ? path.dirname(settings.logFilePath) : undefined,
+    ...commonNeverwinterLogDirectories(),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const directory of [...new Set(directories)]) {
+    const logFile = await findLatestCombatLog(directory);
+    if (logFile) return logFile;
+  }
+  return null;
+}
+
+function commonNeverwinterLogDirectories(): string[] {
+  const programFiles = process.env.ProgramFiles;
+  const programFilesX86 = process.env["ProgramFiles(x86)"];
+  const userProfile = process.env.USERPROFILE;
+  return [
+    programFilesX86
+      ? path.join(
+          programFilesX86,
+          "Steam",
+          "steamapps",
+          "common",
+          "Cryptic Studios",
+          "Neverwinter",
+          "Live",
+          "logs",
+          "GameClient",
+        )
+      : undefined,
+    programFilesX86
+      ? path.join(
+          programFilesX86,
+          "Neverwinter_en",
+          "Neverwinter",
+          "Live",
+          "logs",
+          "GameClient",
+        )
+      : undefined,
+    programFiles
+      ? path.join(
+          programFiles,
+          "Neverwinter",
+          "Neverwinter",
+          "Live",
+          "logs",
+          "GameClient",
+        )
+      : undefined,
+    userProfile
+      ? path.join(
+          userProfile,
+          "Games",
+          "Neverwinter",
+          "Live",
+          "logs",
+          "GameClient",
+        )
+      : undefined,
+  ].filter((value): value is string => Boolean(value));
+}
+
+async function findLatestCombatLog(directory: string): Promise<string | null> {
+  try {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    const logFiles = entries.filter(
+      (entry) => entry.isFile() && entry.name.toLocaleLowerCase("en-US").endsWith(".log"),
+    );
+    if (logFiles.length === 0) return null;
+
+    const ranked = await Promise.all(
+      logFiles.map(async (entry) => {
+        const filePath = path.join(directory, entry.name);
+        const stat = await fs.stat(filePath);
+        const combatPriority = /combat/i.test(entry.name) ? 1 : 0;
+        return { filePath, modifiedAt: stat.mtimeMs, combatPriority };
+      }),
+    );
+    ranked.sort(
+      (left, right) =>
+        right.combatPriority - left.combatPriority ||
+        right.modifiedAt - left.modifiedAt,
+    );
+    return ranked[0]?.filePath ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function checkForUpdates(force = false): Promise<UpdateStatus> {
