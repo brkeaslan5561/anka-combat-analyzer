@@ -41,6 +41,7 @@ describe("encounter classification", () => {
     expect(encounters).toHaveLength(2);
     expect(encounters[0]?.primaryTarget).toContain("BOSS");
     expect(encounters[0]?.primaryTarget).toContain("Boss Prime");
+    expect(encounters[0]?.primaryTarget).not.toContain("FAIL");
     expect(encounters[1]?.primaryTarget).toContain("AOE");
     expect(encounters[1]?.primaryTarget).toContain("Remnant");
   });
@@ -77,7 +78,7 @@ describe("encounter classification", () => {
     expect(encounter?.primaryTarget).not.toContain("BOSS");
   });
 
-  it("öldürülmeden bırakılan doğrulanmış bossu yeni dövüş başlayınca FAIL olarak kapatır", () => {
+  it("Kill flag gelmeyen tamamlanmış bossu sırf sonraki AOE başladığı için FAIL yapmaz", () => {
     const engine = new CombatAnalysisEngine();
 
     for (let second = 0; second <= 40; second += 1) {
@@ -91,10 +92,27 @@ describe("encounter classification", () => {
     const encounters = engine.snapshot("fixture.log").encounters;
 
     expect(encounters).toHaveLength(2);
+    expect(encounters[0]?.primaryTarget).toContain("BOSS");
+    expect(encounters[0]?.primaryTarget).not.toContain("FAIL");
+    expect(encounters[1]?.primaryTarget).toContain("AOE");
+  });
+
+  it("aynı boss kısa süre sonra yeniden engage edilirse önceki denemeyi FAIL yapar", () => {
+    const engine = new CombatAnalysisEngine();
+
+    for (let second = 0; second <= 40; second += 1) {
+      engine.ingestLine(hit(second, "Boss Prime", "C[17 Trial_Boss_Prime]", 420));
+      if (second >= 8 && second <= 17) {
+        engine.ingestLine(hit(second, "Boss Add", "C[21 Add_Boss]", 120));
+      }
+    }
+
+    engine.ingestLine(hit(48, "Hallway Mob", "C[77 Hallway_Mob]", 300));
+    engine.ingestLine(hit(56, "Boss Prime", "C[117 Trial_Boss_Prime]", 420));
+    const encounters = engine.snapshot("fixture.log").encounters;
+
     expect(encounters[0]?.primaryTarget).toContain("FAIL");
     expect(encounters[0]?.primaryTarget).toContain("BOSS");
-    expect(encounters[1]?.primaryTarget).toContain("AOE");
-    expect(encounters[1]?.primaryTarget).toContain("Hallway Mob");
   });
 
   it("+ New basıldığı anda combatsız 0 saniyelik manuel encounter oluşturur", () => {
