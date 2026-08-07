@@ -42,7 +42,7 @@ describe("encounter classification", () => {
     expect(encounters[0]?.primaryTarget).toContain("BOSS");
     expect(encounters[0]?.primaryTarget).toContain("Boss Prime");
     expect(encounters[0]?.bossTargetName).toBe("Boss Prime");
-    expect(encounters[0]?.bossTargetId).toBe("creature-instance:17");
+    expect(encounters[0]?.bossTargetId).toBe("creature:17:Trial_Boss_Prime");
     expect(encounters[0]?.primaryTarget).not.toContain("FAIL");
     expect(encounters[1]?.primaryTarget).toContain("AOE");
     expect(encounters[1]?.primaryTarget).toContain("Remnant");
@@ -69,7 +69,7 @@ describe("encounter classification", () => {
     expect(encounter?.durationSeconds).toBe(13);
     expect(encounter?.primaryTarget).toContain("BOSS");
     expect(encounter?.bossTargetName).toBe("Hunang");
-    expect(encounter?.bossTargetId).toBe("creature-instance:101");
+    expect(encounter?.bossTargetId).toBe("creature:101:Trial_Hunang");
   });
 
   it("kısa trash pullundaki tek elite baskın değilse boss yapmaz", () => {
