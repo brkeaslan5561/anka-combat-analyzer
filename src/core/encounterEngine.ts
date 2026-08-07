@@ -48,6 +48,7 @@ interface EncounterAccumulator {
   kind: EncounterKind;
   result: EncounterResult;
   bossTargetId?: string;
+  bossStableId?: string;
   bossTargetName?: string;
   manual: boolean;
 }
@@ -102,6 +103,7 @@ export class EncounterEngine {
 
     if (!this.current) {
       if (!hostile) return;
+      this.markPreviousBossFailedOnReengage(event);
       this.current = this.createEncounter(event.timestamp, false);
     }
 
@@ -220,11 +222,14 @@ export class EncounterEngine {
     this.endCurrent(false);
   }
 
-  endCurrent(applyFailCheck = true): void {
+  endCurrent(_applyFailCheck = true): void {
     if (!this.current) return;
     if (this.current.result === "active") {
-      this.current.result =
-        applyFailCheck && this.current.kind === "boss" ? "fail" : "ended";
+      // Not every Neverwinter boss produces a reliable Kill flag. Treat an
+      // automatically closed boss as neutral/ended first. If the same boss is
+      // engaged again shortly afterwards, that previous attempt is converted
+      // to FAIL by markPreviousBossFailedOnReengage().
+      this.current.result = "ended";
     }
     this.completed.push(this.current);
     this.current = null;
@@ -406,7 +411,27 @@ export class EncounterEngine {
     if (!persistentBoss && !killedBossCandidate) return;
     encounter.kind = "boss";
     encounter.bossTargetId = candidate.targetId;
+    encounter.bossStableId = candidate.target.stableId;
     encounter.bossTargetName = candidate.target.name;
+  }
+
+  private markPreviousBossFailedOnReengage(event: CombatEvent): void {
+    if (!isDamageToCreature(event) || event.target.kind !== "creature") return;
+    const reengageWindowMs = 10 * 60 * 1_000;
+
+    for (let index = this.completed.length - 1; index >= 0; index -= 1) {
+      const encounter = this.completed[index];
+      if (!encounter) continue;
+      if (event.timestamp - encounter.endedAt > reengageWindowMs) break;
+      if (
+        encounter.kind === "boss" &&
+        encounter.result === "ended" &&
+        encounter.bossStableId === event.target.stableId
+      ) {
+        encounter.result = "fail";
+        return;
+      }
+    }
   }
 
   private belongsToCurrentBossEncounter(
@@ -430,7 +455,8 @@ export class EncounterEngine {
       encounter.kind === "boss" &&
       Boolean(encounter.bossTargetId) &&
       event.target.kind === "creature" &&
-      event.target.instanceId === encounter.bossTargetId &&
+      (event.target.instanceId === encounter.bossTargetId ||
+        event.target.stableId === encounter.bossStableId) &&
       hasKillFlag(event)
     );
   }
