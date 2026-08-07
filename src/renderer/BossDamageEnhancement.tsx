@@ -10,7 +10,7 @@ interface BossDamageRow {
 
 interface BossDamageView {
   encounterId: string;
-  generatedAt: number;
+  sourceVersion: string;
   bossName: string;
   totalDamage: number;
   rows: BossDamageRow[];
@@ -67,28 +67,28 @@ export function BossDamageEnhancement() {
         return;
       }
 
-      const key = `${encounter.id}:${snapshot.generatedAt}`;
+      const sourceVersion = `${encounter.id}:${encounter.endedAt}:${encounter.totalDamage}`;
       const table = rankingTable();
       if (
         cached?.encounterId === encounter.id &&
-        cached.generatedAt === snapshot.generatedAt &&
-        table?.dataset.bossDamageVersion === key
+        cached.sourceVersion === sourceVersion &&
+        table?.dataset.bossDamageVersion === sourceVersion
       ) {
         return;
       }
       if (
         cached?.encounterId === encounter.id &&
-        cached.generatedAt === snapshot.generatedAt
+        cached.sourceVersion === sourceVersion
       ) {
-        decorateBossColumns(cached, key);
+        decorateBossColumns(cached);
         return;
       }
-      if (loadingKey === key) return;
-      loadingKey = key;
+      if (loadingKey === sourceVersion) return;
+      loadingKey = sourceVersion;
 
       try {
         const summaries = await window.analyzer.getScopeEntities(encounter.id, false);
-        if (disposed || loadingKey !== key) return;
+        if (disposed || loadingKey !== sourceVersion) return;
         const players = summaries.filter(
           (entity) => entity.kind === "player" && entity.outgoingDamage > 0,
         );
@@ -97,7 +97,7 @@ export function BossDamageEnhancement() {
             window.analyzer.getEntityDetail(encounter.id, false, entity.entityId),
           ),
         );
-        if (disposed || loadingKey !== key) return;
+        if (disposed || loadingKey !== sourceVersion) return;
 
         const rawRows = details
           .filter((detail): detail is EntityAnalysis => Boolean(detail))
@@ -113,7 +113,7 @@ export function BossDamageEnhancement() {
 
         cached = {
           encounterId: encounter.id,
-          generatedAt: snapshot.generatedAt,
+          sourceVersion,
           bossName: encounter.bossTargetName,
           totalDamage,
           rows: rawRows
@@ -123,9 +123,9 @@ export function BossDamageEnhancement() {
             }))
             .sort((left, right) => right.damage - left.damage),
         };
-        decorateBossColumns(cached, key);
+        decorateBossColumns(cached);
       } finally {
-        if (loadingKey === key) loadingKey = "";
+        if (loadingKey === sourceVersion) loadingKey = "";
       }
     };
 
@@ -144,7 +144,6 @@ export function BossDamageEnhancement() {
     });
     const unsubscribe = window.analyzer.onSnapshot((nextSnapshot) => {
       snapshot = nextSnapshot;
-      cached = null;
       schedule();
     });
 
@@ -160,7 +159,7 @@ export function BossDamageEnhancement() {
   return null;
 }
 
-function decorateBossColumns(view: BossDamageView, version: string): void {
+function decorateBossColumns(view: BossDamageView): void {
   const table = rankingTable();
   if (!table) return;
   const headerRow = table.tHead?.rows[0];
@@ -216,7 +215,7 @@ function decorateBossColumns(view: BossDamageView, version: string): void {
   }
 
   table.dataset.bossDamageEncounter = view.encounterId;
-  table.dataset.bossDamageVersion = version;
+  table.dataset.bossDamageVersion = view.sourceVersion;
 }
 
 function rankingTable(): HTMLTableElement | null {
