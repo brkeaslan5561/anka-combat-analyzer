@@ -67,8 +67,6 @@ export class EncounterEngine {
     const inactivityMs = this.inactivitySeconds * 1_000;
     const phaseGapMs = this.phaseGapSeconds * 1_000;
 
-    // A manual encounter is created immediately when the user presses + New.
-    // Do not pollute its zero-length waiting state with unrelated aura/heal lines.
     if (this.current?.manual && this.current.hostileEvents === 0 && !hostile) {
       return;
     }
@@ -107,8 +105,6 @@ export class EncounterEngine {
       this.current = this.createEncounter(event.timestamp, false);
     }
 
-    // The placeholder uses wall-clock time only to make the row visible. Reset
-    // combat timing to the first actual hostile event when combat arrives.
     if (hostile && this.current.manual && this.current.hostileEvents === 0) {
       this.current.startedAt = event.timestamp;
       this.current.endedAt = event.timestamp;
@@ -225,10 +221,6 @@ export class EncounterEngine {
   endCurrent(_applyFailCheck = true): void {
     if (!this.current) return;
     if (this.current.result === "active") {
-      // Not every Neverwinter boss produces a reliable Kill flag. Treat an
-      // automatically closed boss as neutral/ended first. If the same boss is
-      // engaged again shortly afterwards, that previous attempt is converted
-      // to FAIL by markPreviousBossFailedOnReengage().
       this.current.result = "ended";
     }
     this.completed.push(this.current);
@@ -353,7 +345,10 @@ export class EncounterEngine {
         const hitShare = target.hits / totalHits;
         const spanRatio = targetSpanMs / durationMs;
         const persistenceScore =
-          spanRatio * 0.55 + Math.min(1, target.hits / 30) * 0.25 + hitShare * 0.2;
+          spanRatio * 0.48 +
+          Math.min(1, target.hits / 24) * 0.22 +
+          hitShare * 0.15 +
+          share * 0.15;
         return {
           targetId,
           target,
@@ -380,6 +375,7 @@ export class EncounterEngine {
     const medianOtherDamage = median(otherTargets);
     const damageLead =
       medianOtherDamage > 0 ? candidate.target.amount / medianOtherDamage : Infinity;
+    const hasAdds = candidates.length >= 2;
     const clearBossShape =
       candidate.share >= 0.58 ||
       (persistenceLeadSeconds >= 8 && damageLead >= 2.5) ||
@@ -389,8 +385,6 @@ export class EncounterEngine {
       event.target.kind === "creature" &&
       event.target.instanceId === candidate.targetId;
 
-    // Prefer false negatives over false positives. A long-lived elite in a trash
-    // pull must not become a boss unless it is clearly separated from the pack.
     const persistentBoss =
       durationSeconds >= 35 &&
       targetSpanSeconds >= 30 &&
@@ -399,16 +393,36 @@ export class EncounterEngine {
       encounter.hostileEvents >= 45 &&
       clearBossShape &&
       (candidate.share >= 0.36 || candidate.hitShare >= 0.42);
+
+    // Some legitimate bosses are very short and spawn one or more adds. In that
+    // shape the boss must still be a unique archetype and clearly dominate the
+    // damage/hit distribution, but it no longer needs a 30+ second lifetime.
+    const shortBossWithAdds =
+      hasAdds &&
+      durationSeconds >= 9 &&
+      targetSpanSeconds >= 7 &&
+      candidate.spanRatio >= 0.7 &&
+      candidate.target.hits >= 9 &&
+      encounter.hostileEvents >= 14 &&
+      (
+        candidate.share >= 0.52 ||
+        (candidate.share >= 0.38 && candidate.hitShare >= 0.34 && damageLead >= 2.7) ||
+        (candidate.hitShare >= 0.5 && damageLead >= 2.2)
+      );
+
     const killedBossCandidate =
       killBoost &&
-      durationSeconds >= 22 &&
-      targetSpanSeconds >= 18 &&
-      candidate.spanRatio >= 0.82 &&
-      candidate.target.hits >= 18 &&
-      clearBossShape &&
-      (candidate.share >= 0.34 || candidate.hitShare >= 0.4);
+      durationSeconds >= 6 &&
+      targetSpanSeconds >= 4 &&
+      candidate.spanRatio >= 0.6 &&
+      candidate.target.hits >= 6 &&
+      (
+        candidate.share >= 0.34 ||
+        candidate.hitShare >= 0.4 ||
+        damageLead >= 2.2
+      );
 
-    if (!persistentBoss && !killedBossCandidate) return;
+    if (!persistentBoss && !shortBossWithAdds && !killedBossCandidate) return;
     encounter.kind = "boss";
     encounter.bossTargetId = candidate.targetId;
     encounter.bossStableId = candidate.target.stableId;
@@ -499,6 +513,9 @@ export class EncounterEngine {
       totalHealing: merged.totalHealing,
       entityCount: merged.entities.length,
       primaryTarget: `${resultLabel}${manualLabel}${activeLabel}${typePrefix}${primaryTarget}`,
+      bossTargetId: encounter.bossTargetId,
+      bossStableId: encounter.bossStableId,
+      bossTargetName: encounter.bossTargetName,
       phases: encounter.phases.map(toPhaseSummary),
       mergedEntities: [],
       splitEntities: [],
