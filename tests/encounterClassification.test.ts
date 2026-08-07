@@ -41,9 +41,50 @@ describe("encounter classification", () => {
     expect(encounters).toHaveLength(2);
     expect(encounters[0]?.primaryTarget).toContain("BOSS");
     expect(encounters[0]?.primaryTarget).toContain("Boss Prime");
+    expect(encounters[0]?.bossTargetName).toBe("Boss Prime");
+    expect(encounters[0]?.bossTargetId).toBe("creature-instance:17");
     expect(encounters[0]?.primaryTarget).not.toContain("FAIL");
     expect(encounters[1]?.primaryTarget).toContain("AOE");
     expect(encounters[1]?.primaryTarget).toContain("Remnant");
+  });
+
+  it("Hunang gibi kısa bossu yanında iki add olsa da BOSS olarak tanır", () => {
+    const engine = new CombatAnalysisEngine();
+
+    for (let second = 0; second <= 13; second += 1) {
+      engine.ingestLine(
+        hit(
+          second,
+          "Hunang",
+          "C[101 Trial_Hunang]",
+          700,
+          second === 13 ? "Kill" : "",
+        ),
+      );
+      engine.ingestLine(hit(second, "Hunang Add", "C[201 Hunang_Add]", 110));
+      engine.ingestLine(hit(second, "Hunang Add", "C[202 Hunang_Add]", 110));
+    }
+
+    const encounter = engine.snapshot("fixture.log").encounters[0];
+    expect(encounter?.durationSeconds).toBe(13);
+    expect(encounter?.primaryTarget).toContain("BOSS");
+    expect(encounter?.bossTargetName).toBe("Hunang");
+    expect(encounter?.bossTargetId).toBe("creature-instance:101");
+  });
+
+  it("kısa trash pullundaki tek elite baskın değilse boss yapmaz", () => {
+    const engine = new CombatAnalysisEngine();
+
+    for (let second = 0; second <= 12; second += 1) {
+      engine.ingestLine(hit(second, "Elite Guard", "C[301 Elite_Guard]", 300));
+      engine.ingestLine(hit(second, "Soldier", "C[302 Hall_Soldier]", 220));
+      engine.ingestLine(hit(second, "Mage", "C[303 Hall_Mage]", 210));
+    }
+
+    const encounter = engine.snapshot("fixture.log").encounters[0];
+    expect(encounter?.primaryTarget).toContain("AOE");
+    expect(encounter?.primaryTarget).not.toContain("BOSS");
+    expect(encounter?.bossTargetId).toBeUndefined();
   });
 
   it("aynı archetype'tan birden fazla uzun yaşayan mob olan AOE pullunu boss yapmaz", () => {
