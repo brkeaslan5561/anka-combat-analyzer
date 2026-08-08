@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
-import { BossDamageEnhancement } from "./BossDamageEnhancement";
 import { DesktopEnhancements } from "./DesktopEnhancements";
 import { EncounterDeletionEnhancement } from "./EncounterDeletionEnhancement";
 import { Overlay } from "./Overlay";
@@ -21,7 +20,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <App />
         <DesktopEnhancements />
         <EncounterDeletionEnhancement />
-        <BossDamageEnhancement />
       </>
     )}
   </React.StrictMode>,
