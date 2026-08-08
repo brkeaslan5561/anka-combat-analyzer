@@ -2,53 +2,21 @@ import { describe, expect, it } from "vitest";
 import { CombatAnalysisEngine } from "../src/core/analysisEngine";
 
 function hit(
-  second: number,
+  elapsedSeconds: number,
   targetName: string,
   targetRaw: string,
   amount = 100,
   flags = "",
 ): string {
-  const seconds = String(second).padStart(2, "0");
-  return `26:08:02:22:00:${seconds}.0::opop,P[1@2 opop@test],,*,${targetName},${targetRaw},Oath Strike,Pn.hit,Physical,${flags},${amount},${amount}`;
+  const hours = 22 + Math.floor(elapsedSeconds / 3600);
+  const remaining = elapsedSeconds % 3600;
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return `26:08:02:${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.0::opop,P[1@2 opop@test],,*,${targetName},${targetRaw},Oath Strike,Pn.hit,Physical,${flags},${amount},${amount}`;
 }
 
-describe("encounter classification", () => {
-  it("uzun boss savaşını add dalgaları varken tanır ve boss ölünce kalan mobları AOE'ye ayırır", () => {
-    const engine = new CombatAnalysisEngine();
-
-    for (let second = 0; second <= 36; second += 1) {
-      engine.ingestLine(
-        hit(
-          second,
-          "Boss Prime",
-          "C[17 Trial_Boss_Prime]",
-          400,
-          second === 36 ? "Kill" : "",
-        ),
-      );
-      if (second >= 5 && second <= 12) {
-        engine.ingestLine(hit(second, "Add Alpha", "C[21 Add_Grunt]", 120));
-        engine.ingestLine(hit(second, "Add Alpha", "C[22 Add_Grunt]", 120));
-      }
-      if (second >= 20 && second <= 27) {
-        engine.ingestLine(hit(second, "Add Beta", "C[31 Add_Beta]", 150));
-      }
-    }
-
-    engine.ingestLine(hit(37, "Remnant", "C[40 Add_Remnant]", 500));
-    const encounters = engine.snapshot("fixture.log").encounters;
-
-    expect(encounters).toHaveLength(2);
-    expect(encounters[0]?.primaryTarget).toContain("BOSS");
-    expect(encounters[0]?.primaryTarget).toContain("Boss Prime");
-    expect(encounters[0]?.bossTargetName).toBe("Boss Prime");
-    expect(encounters[0]?.bossTargetId).toBe("creature:17:Trial_Boss_Prime");
-    expect(encounters[0]?.primaryTarget).not.toContain("FAIL");
-    expect(encounters[1]?.primaryTarget).toContain("AOE");
-    expect(encounters[1]?.primaryTarget).toContain("Remnant");
-  });
-
-  it("Hunang gibi kısa bossu yanında iki add olsa da BOSS olarak tanır", () => {
+describe("simple encounter segmentation", () => {
+  it("boss veya AOE sınıflandırması yapmadan ana hedef adını gösterir", () => {
     const engine = new CombatAnalysisEngine();
 
     for (let second = 0; second <= 13; second += 1) {
@@ -67,93 +35,62 @@ describe("encounter classification", () => {
 
     const encounter = engine.snapshot("fixture.log").encounters[0];
     expect(encounter?.durationSeconds).toBe(13);
-    expect(encounter?.primaryTarget).toContain("BOSS");
-    expect(encounter?.bossTargetName).toBe("Hunang");
-    expect(encounter?.bossTargetId).toBe("creature:101:Trial_Hunang");
-  });
-
-  it("kısa trash pullundaki tek elite baskın değilse boss yapmaz", () => {
-    const engine = new CombatAnalysisEngine();
-
-    for (let second = 0; second <= 12; second += 1) {
-      engine.ingestLine(hit(second, "Elite Guard", "C[301 Elite_Guard]", 300));
-      engine.ingestLine(hit(second, "Soldier", "C[302 Hall_Soldier]", 220));
-      engine.ingestLine(hit(second, "Mage", "C[303 Hall_Mage]", 210));
-    }
-
-    const encounter = engine.snapshot("fixture.log").encounters[0];
-    expect(encounter?.primaryTarget).toContain("AOE");
+    expect(encounter?.primaryTarget).toBe("Hunang");
     expect(encounter?.primaryTarget).not.toContain("BOSS");
+    expect(encounter?.primaryTarget).not.toContain("AOE");
     expect(encounter?.bossTargetId).toBeUndefined();
   });
 
-  it("aynı archetype'tan birden fazla uzun yaşayan mob olan AOE pullunu boss yapmaz", () => {
+  it("Kill flag encounterı özel bir boss kuralıyla kapatmaz", () => {
     const engine = new CombatAnalysisEngine();
 
-    for (let second = 0; second <= 40; second += 1) {
-      engine.ingestLine(hit(second, "Guardian", "C[51 Hall_Guardian]", 300));
-      engine.ingestLine(hit(second, "Guardian", "C[52 Hall_Guardian]", 280));
-      if (second >= 4) {
-        engine.ingestLine(hit(second, "Soldier", "C[60 Hall_Soldier]", 150));
-      }
-    }
+    engine.ingestLine(hit(0, "Target A", "C[1 Target_A]", 100));
+    engine.ingestLine(hit(5, "Target A", "C[1 Target_A]", 100, "Kill"));
+    engine.ingestLine(hit(8, "Target B", "C[2 Target_B]", 100));
 
-    const encounter = engine.snapshot("fixture.log").encounters[0];
-    expect(encounter?.primaryTarget).toContain("AOE");
-    expect(encounter?.primaryTarget).not.toContain("BOSS");
-  });
-
-  it("uzun AOE'deki tek tanky elite diğer moblardan açık şekilde ayrışmıyorsa boss yapmaz", () => {
-    const engine = new CombatAnalysisEngine();
-
-    for (let second = 0; second <= 42; second += 1) {
-      engine.ingestLine(hit(second, "Elite Guard", "C[71 Elite_Guard]", 260));
-      engine.ingestLine(hit(second, "Warrior", "C[72 Hall_Warrior]", 220));
-      if (second >= 2 && second <= 40) {
-        engine.ingestLine(hit(second, "Mage", "C[73 Hall_Mage]", 210));
-      }
-    }
-
-    const encounter = engine.snapshot("fixture.log").encounters[0];
-    expect(encounter?.primaryTarget).toContain("AOE");
-    expect(encounter?.primaryTarget).not.toContain("BOSS");
-  });
-
-  it("Kill flag gelmeyen tamamlanmış bossu sırf sonraki AOE başladığı için FAIL yapmaz", () => {
-    const engine = new CombatAnalysisEngine();
-
-    for (let second = 0; second <= 40; second += 1) {
-      engine.ingestLine(hit(second, "Boss Prime", "C[17 Trial_Boss_Prime]", 420));
-      if (second >= 8 && second <= 17) {
-        engine.ingestLine(hit(second, "Boss Add", "C[21 Add_Boss]", 120));
-      }
-    }
-
-    engine.ingestLine(hit(48, "Hallway Mob", "C[77 Hallway_Mob]", 300));
     const encounters = engine.snapshot("fixture.log").encounters;
+    expect(encounters).toHaveLength(1);
+    expect(encounters[0]?.durationSeconds).toBe(8);
+  });
 
+  it("10 saniyeden uzun hostile boşlukta yeni encounter açar", () => {
+    const engine = new CombatAnalysisEngine();
+
+    engine.ingestLine(hit(0, "First Pack", "C[1 First_Pack]", 100));
+    engine.ingestLine(hit(6, "First Pack", "C[1 First_Pack]", 100));
+    engine.ingestLine(hit(18, "Second Pack", "C[2 Second_Pack]", 100));
+
+    const encounters = engine.snapshot("fixture.log").encounters;
     expect(encounters).toHaveLength(2);
-    expect(encounters[0]?.primaryTarget).toContain("BOSS");
-    expect(encounters[0]?.primaryTarget).not.toContain("FAIL");
-    expect(encounters[1]?.primaryTarget).toContain("AOE");
+    expect(encounters[0]?.primaryTarget).toBe("First Pack");
+    expect(encounters[1]?.primaryTarget).toBe("Second Pack");
   });
 
-  it("aynı boss kısa süre sonra yeniden engage edilirse önceki denemeyi FAIL yapar", () => {
+  it("10 saniye veya daha kısa boşlukta aynı encounterı sürdürür", () => {
     const engine = new CombatAnalysisEngine();
 
-    for (let second = 0; second <= 40; second += 1) {
-      engine.ingestLine(hit(second, "Boss Prime", "C[17 Trial_Boss_Prime]", 420));
-      if (second >= 8 && second <= 17) {
-        engine.ingestLine(hit(second, "Boss Add", "C[21 Add_Boss]", 120));
-      }
-    }
+    engine.ingestLine(hit(0, "First Target", "C[1 First_Target]", 100));
+    engine.ingestLine(hit(10, "Second Target", "C[2 Second_Target]", 200));
 
-    engine.ingestLine(hit(48, "Hallway Mob", "C[77 Hallway_Mob]", 300));
-    engine.ingestLine(hit(56, "Boss Prime", "C[117 Trial_Boss_Prime]", 420));
     const encounters = engine.snapshot("fixture.log").encounters;
+    expect(encounters).toHaveLength(1);
+    expect(encounters[0]?.durationSeconds).toBe(10);
+  });
 
-    expect(encounters[0]?.primaryTarget).toContain("FAIL");
-    expect(encounters[0]?.primaryTarget).toContain("BOSS");
+  it("All Encounters süresinde pull aralarını kesmez; 12 dakikalık run 12 dakika görünür", () => {
+    const engine = new CombatAnalysisEngine();
+
+    // Only a few short combat bursts across a 12 minute run. The old logic
+    // summed the bursts and therefore displayed a much shorter duration.
+    engine.ingestLine(hit(0, "Pack 1", "C[1 Pack_1]", 100));
+    engine.ingestLine(hit(60, "Pack 2", "C[2 Pack_2]", 100));
+    engine.ingestLine(hit(240, "Pack 3", "C[3 Pack_3]", 100));
+    engine.ingestLine(hit(420, "Pack 4", "C[4 Pack_4]", 100));
+    engine.ingestLine(hit(720, "Final Target", "C[5 Final_Target]", 100));
+
+    const snapshot = engine.snapshot("fixture.log");
+    expect(snapshot.activeCombatSeconds).toBe(720);
+    expect(snapshot.encounters.length).toBe(5);
   });
 
   it("+ New basıldığı anda combatsız 0 saniyelik manuel encounter oluşturur", () => {
@@ -175,5 +112,16 @@ describe("encounter classification", () => {
     const encounters = engine.snapshot("fixture.log").encounters;
     expect(encounters[1]?.primaryTarget).toContain("MANUAL");
     expect(encounters[1]?.primaryTarget).toContain("Manual Target");
+  });
+
+  it("Fail yalnızca kullanıcı Fail butonuna bastığında eklenir", () => {
+    const engine = new CombatAnalysisEngine();
+    engine.startNewEncounter();
+    engine.ingestLine(hit(0, "Manual Target", "C[50 Manual_Target]", 100));
+    engine.markEncounterFail();
+
+    const encounter = engine.snapshot("fixture.log").encounters[0];
+    expect(encounter?.primaryTarget).toContain("FAIL");
+    expect(encounter?.primaryTarget).toContain("MANUAL");
   });
 });

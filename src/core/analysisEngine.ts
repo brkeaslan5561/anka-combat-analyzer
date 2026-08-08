@@ -30,7 +30,7 @@ export class CombatAnalysisEngine {
   private readonly enemyObservations: PowerObservation[] = [];
   private cachedEnemyPowers: CombatSnapshot["enemyPowers"] = [];
   private cadenceDirty = true;
-  private readonly encounterEngine = new EncounterEngine(20, 6);
+  private readonly encounterEngine = new EncounterEngine(10);
   private readonly liveCastDetector = new LiveCastDetector(5);
 
   ingestLine(line: string): PowerCastEvent | null {
@@ -76,9 +76,12 @@ export class CombatAnalysisEngine {
   }
 
   snapshot(filePath: string, refreshCadence = true): CombatSnapshot {
+    // All Encounters represents the elapsed run/session span, not the sum of
+    // individual combat bursts. This keeps the displayed time and EncDPS from
+    // shrinking when there are normal gaps between pulls.
     const activeCombatSeconds = Math.max(
       1,
-      this.encounterEngine.getActiveCombatSeconds(),
+      this.encounterEngine.getElapsedSeconds(),
     );
     const merged = this.mergedStatistics.build(activeCombatSeconds, false);
     const split = this.splitStatistics.build(activeCombatSeconds, false);
@@ -142,7 +145,7 @@ export class CombatAnalysisEngine {
     if (scopeId === "all") {
       const durationSeconds = Math.max(
         1,
-        this.encounterEngine.getActiveCombatSeconds(),
+        this.encounterEngine.getElapsedSeconds(),
       );
       return (splitPetDamage
         ? this.splitStatistics
@@ -169,7 +172,7 @@ export class CombatAnalysisEngine {
     if (scopeId === "all") {
       const durationSeconds = Math.max(
         1,
-        this.encounterEngine.getActiveCombatSeconds(),
+        this.encounterEngine.getElapsedSeconds(),
       );
       return (splitPetDamage
         ? this.splitStatistics
