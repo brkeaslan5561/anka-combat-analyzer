@@ -5,7 +5,51 @@ const TIMESTAMP_PATTERN =
 const PLAYER_PATTERN = /^P\[(\d+)@(\d+)\s+(.+)\]$/;
 const CREATURE_PATTERN = /^C\[(\d+)\s+(.+)\]$/;
 
-export const DAMAGE_EFFECT_TYPES = new Set(["Physical", "Poison"]);
+const NON_DAMAGE_EFFECT_TYPES = new Set([
+  "HitPoints",
+  "HitPointsMax",
+  "Shield",
+  "Power",
+  "Soulweave",
+  "Divinity",
+  "AttribMod",
+  "AttribModExpire",
+  "PowerMode",
+  "Hold",
+  "Root",
+  "KnockBack",
+  "KnockUp",
+  "Disable",
+  "Null",
+]);
+
+/**
+ * Neverwinter damage is not limited to Physical/Poison. Powers and item procs
+ * can emit schools such as Arcane, Radiant or Fire, and new proc schools may
+ * appear without a parser update. Keep Set.has() compatibility for the rest of
+ * the analyzer, but classify every non-control/resource effect as damage.
+ */
+class DamageEffectTypes extends Set<string> {
+  override has(effectType: string): boolean {
+    const normalized = effectType.trim();
+    return normalized.length > 0 && !NON_DAMAGE_EFFECT_TYPES.has(normalized);
+  }
+}
+
+export const DAMAGE_EFFECT_TYPES = new DamageEffectTypes([
+  "Physical",
+  "Poison",
+  "Arcane",
+  "Radiant",
+  "Fire",
+  "Cold",
+  "Lightning",
+  "Necrotic",
+  "Force",
+  "Psychic",
+  "Thunder",
+  "Acid",
+]);
 export const RESOURCE_EFFECT_TYPES = new Set([
   "Power",
   "Soulweave",
@@ -168,10 +212,14 @@ function prettifyArchetype(archetype: string): string {
     .trim();
 }
 
+function getActorKind(event: CombatEvent): CombatEntity["kind"] {
+  return event.owner.kind !== "unknown" ? event.owner.kind : event.source.kind;
+}
+
 export function isDamageToCreature(event: CombatEvent): boolean {
   return (
     !isIgnoredCombatEvent(event) &&
-    event.owner.kind === "player" &&
+    getActorKind(event) === "player" &&
     event.target.kind === "creature" &&
     event.magnitude > 0 &&
     DAMAGE_EFFECT_TYPES.has(event.effectType)
@@ -187,9 +235,10 @@ export function isHostileCombatEvent(event: CombatEvent): boolean {
     return false;
   }
 
+  const actorKind = getActorKind(event);
   return (
-    (event.owner.kind === "player" && event.target.kind === "creature") ||
-    (event.owner.kind === "creature" &&
+    (actorKind === "player" && event.target.kind === "creature") ||
+    (actorKind === "creature" &&
       (event.target.kind === "player" || event.target.kind === "creature"))
   );
 }
@@ -221,7 +270,8 @@ export function isEnemyPowerObservation(event: CombatEvent): boolean {
     !isIgnoredCombatEvent(event) &&
     event.owner.kind === "creature" &&
     event.abilityId.startsWith("Pn.") &&
-    ENEMY_OBSERVATION_TYPES.has(event.effectType) &&
+    (DAMAGE_EFFECT_TYPES.has(event.effectType) ||
+      ENEMY_OBSERVATION_TYPES.has(event.effectType)) &&
     event.target.kind !== "unknown"
   );
 }
