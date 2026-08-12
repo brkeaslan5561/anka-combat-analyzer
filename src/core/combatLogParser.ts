@@ -127,15 +127,36 @@ export function parseCombatLogLine(line: string, lineNumber: number): ParseResul
     return { ok: false, reason: "Zaman damgası dönüştürülemedi" };
   }
 
+  // Neverwinter uses compact references in combatlog lines. This mirrors the
+  // long-standing ACT parser rules instead of treating these references as
+  // unknown entities:
+  //   source=*   -> source is the owner
+  //   blank src  -> source is the owner
+  //   target=*   -> target is the resolved source
+  // Proc/additional-damage lines use these forms frequently, so resolving them
+  // here keeps every downstream system (encounters, breakdown, targets, DPS)
+  // working without hard-coding any item, feat or proc names.
+  const owner = parseEntity(ownerDisplay, ownerRaw);
+  const normalizedSourceRaw = sourceRaw.trim();
+  const source =
+    normalizedSourceRaw === "*" ||
+    (normalizedSourceRaw.length === 0 && sourceDisplay.trim().length === 0)
+      ? owner
+      : parseEntity(sourceDisplay, sourceRaw);
+  const target =
+    targetRaw.trim() === "*"
+      ? source
+      : parseEntity(targetDisplay, targetRaw);
+
   return {
     ok: true,
     event: {
       lineNumber,
       timestamp,
       timestampText: cleanLine.slice(0, separatorIndex),
-      owner: parseEntity(ownerDisplay, ownerRaw),
-      source: parseEntity(sourceDisplay, sourceRaw),
-      target: parseEntity(targetDisplay, targetRaw),
+      owner,
+      source,
+      target,
       abilityName: abilityName.trim() || "Bilinmeyen Güç",
       abilityId: abilityId.trim() || "unknown",
       effectType: effectType.trim(),
