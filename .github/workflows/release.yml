@@ -7,8 +7,6 @@ on:
       - "release/**"
     tags:
       - "v*"
-    paths-ignore:
-      - ".release-status/**"
 
 concurrency:
   group: windows-release-${{ github.ref }}
@@ -24,26 +22,6 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-
-      - name: Record release start
-        if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
-        shell: pwsh
-        run: |
-          $version = (Get-Content package.json | ConvertFrom-Json).version
-          New-Item -ItemType Directory -Path .release-status -Force | Out-Null
-          [ordered]@{
-            status = "in_progress"
-            version = $version
-            run_id = "${{ github.run_id }}"
-            run_url = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            commit = "${{ github.sha }}"
-          } | ConvertTo-Json | Set-Content ".release-status/v$version.json"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .release-status
-          git commit -m "Start v$version release build"
-          git push origin "HEAD:$env:GITHUB_REF_NAME"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -71,9 +49,27 @@ jobs:
         run: npm run smoke:worker
 
       - name: Build Windows installers
+        shell: pwsh
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run dist:win
+        run: |
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Write-Host "Windows build attempt $attempt/$maxAttempts"
+            npm run dist:win
+            if ($LASTEXITCODE -eq 0) {
+              exit 0
+            }
+
+            if ($attempt -eq $maxAttempts) {
+              Write-Error "Windows build failed after $maxAttempts attempts."
+              exit $LASTEXITCODE
+            }
+
+            Write-Warning "Windows build failed, retrying after a transient-error cooldown."
+            Remove-Item -Recurse -Force release -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds (10 * $attempt)
+          }
 
       - name: Create SHA-256 checksums
         shell: pwsh
@@ -107,30 +103,3 @@ jobs:
           files: |
             release/*.exe
             release/SHA256SUMS.txt
-
-      - name: Record release status
-        if: ${{ always() && startsWith(github.ref, 'refs/heads/release/') }}
-        shell: pwsh
-        run: |
-          $version = "${{ steps.package.outputs.version }}"
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            $version = "unknown"
-          }
-
-          New-Item -ItemType Directory -Path .release-status -Force | Out-Null
-          [ordered]@{
-            status = "${{ job.status }}"
-            version = $version
-            run_id = "${{ github.run_id }}"
-            run_url = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            commit = "${{ github.sha }}"
-          } | ConvertTo-Json | Set-Content ".release-status/v$version.json"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .release-status
-          if (git diff --cached --quiet) {
-            exit 0
-          }
-          git commit -m "Record v$version release status"
-          git push origin "HEAD:$env:GITHUB_REF_NAME"
