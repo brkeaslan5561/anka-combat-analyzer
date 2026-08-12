@@ -1,23 +1,22 @@
-# Anka Combat Analyzer v1.1.4
+# Anka Combat Analyzer v1.1.5
 
-Encounter sistemi sadeleştirildi ve toplam run süresi düzeltildi.
+Additional damage proc'larının combat analizinde eksik görünmesi düzeltildi.
 
 ## Değişiklikler
 
-- Otomatik `BOSS` / `AOE` sınıflandırması tamamen kaldırıldı.
-- Otomatik boss kill/fail çıkarımı kaldırıldı; `FAIL` yalnızca kullanıcı Fail butonuna bastığında eklenir.
-- Otomatik encounterlar artık yalnızca combat akışındaki zaman boşluğuna göre ayrılır. 10 saniyeden uzun yeni hostile boşluk yeni encounter başlatır.
-- Encounter adı, o encounter içinde en fazla hasar alan ana hedefin düz adı olarak gösterilir.
-- `+ New`, `End` ve `Fail` manuel kontrolleri korunur.
-- `All Encounters` süresi artık tek tek combat sürelerinin toplamı değildir. İlk hostile combat eventinden son hostile combat eventine kadar geçen gerçek run süresidir.
-- Böylece örneğin 12 dakika süren bir trial, aktif vurulan anlar toplamı 7 dakika olsa bile `All Encounters` bölümünde yaklaşık 12 dakika görünür.
-- All Encounters EncDPS hesapları da aynı gerçek run süresini kullanır.
-- Boss'a özel `Boss Damage` / `Boss %` arayüzü otomatik boss sınıflandırmasına bağlı olduğu için kaldırıldı.
-- Basit encounter ayrımı, Kill flag davranışı, 12 dakikalık run süresi ve manuel encounter davranışı için regresyon testleri eklendi.
+- Giant Slayer gibi additional damage proc'ları artık oyuncunun toplam hasarına ve Breakdown bölümüne dahil edilir.
+- Hasar algılama yalnızca `Physical` ve `Poison` ile sınırlı değildir; `Arcane`, `Radiant`, `Fire`, `Cold`, `Lightning` ve benzeri gerçek damage effect türleri de desteklenir.
+- İleride farklı effect type ile gelen yeni additional-damage proc'larının kaybolmaması için damage sınıflandırması daha genel hale getirildi.
+- `owner` alanı boş olup gerçek oyuncu `source` alanında bulunduğunda proc hasarı doğru oyuncuya yazılır.
+- `HitPoints`, `Shield`, `Power`, `Soulweave`, `Divinity`, `Hold`, `Root`, `KnockBack`, `KnockUp`, `Disable` gibi heal/resource/control eventleri yanlışlıkla damage olarak sayılmaz.
+- Minor Arm Injury filtresi korunur.
+- Giant Slayer tarzı proc damage, source attribution ve control/resource ayrımı için regresyon testleri eklendi.
 
 ## İndirme
 
-- `Anka-Combat-Analyzer-Setup-1.1.4-x64.exe`: normal Windows kurulumu
-- `Anka-Combat-Analyzer-Portable-1.1.4-x64.exe`: kurulum gerektirmeyen sürüm
+- `Anka-Combat-Analyzer-Setup-1.1.5-x64.exe`: normal Windows kurulumu ve mevcut kurulumların güncellenmesi için önerilen sürüm.
+- `Anka-Combat-Analyzer-Portable-1.1.5-x64.exe`: kurulum gerektirmeyen sürüm.
+
+Uygulama içindeki güncelleme kontrolü GitHub'daki en güncel release'i kullanır. v1.1.4 kullanan kullanıcılar güncelleme kontrolü yaptığında v1.1.5'i görebilir ve Setup dosyasını indirebilir.
 
 Bu sürüm kod imzalama sertifikasıyla imzalanmamıştır. Windows SmartScreen ilk çalıştırmada “Bilinmeyen yayıncı” uyarısı gösterebilir. İndirdiğiniz dosyayı `SHA256SUMS.txt` ile doğrulayabilirsiniz.
