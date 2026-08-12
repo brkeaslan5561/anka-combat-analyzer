@@ -93,7 +93,7 @@ export function parseCombatLogLine(line: string, lineNumber: number): ParseResul
     return { ok: false, reason: "Alan ayırıcı bulunamadı" };
   }
 
-  const fields = cleanLine.slice(separatorIndex + 2).split(",");
+  const fields = parseCombatFields(cleanLine.slice(separatorIndex + 2));
   if (fields.length !== 12) {
     return {
       ok: false,
@@ -165,6 +165,45 @@ export function parseCombatLogLine(line: string, lineNumber: number): ParseResul
       baseMagnitude,
     },
   };
+}
+
+/**
+ * Combatlog fields are CSV-like. Most lines contain no quoting, but Neverwinter
+ * quotes a field when its display text itself contains a comma. For example:
+ *   "Mark of the Giant Slayer, Rank 2"
+ * A plain String.split(",") turns that valid 12-field line into 13 fields and
+ * silently drops the proc. Parse quoted fields generically so any present or
+ * future power/item name containing commas is handled without a name whitelist.
+ */
+function parseCombatFields(value: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let quoted = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+
+    if (character === '"' && (quoted || current.length === 0)) {
+      if (quoted && value[index + 1] === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+      continue;
+    }
+
+    if (character === "," && !quoted) {
+      fields.push(current);
+      current = "";
+      continue;
+    }
+
+    current += character;
+  }
+
+  fields.push(current);
+  return fields;
 }
 
 function parseTimestamp(match: RegExpMatchArray): number {
