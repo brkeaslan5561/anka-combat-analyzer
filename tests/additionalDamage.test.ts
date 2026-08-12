@@ -23,6 +23,59 @@ describe("additional damage proc parsing", () => {
     );
   });
 
+  it("parses the real quoted Giant Slayer combatlog format", () => {
+    const line =
+      '26:08:12:02:17:39.2::necromartın,P[513613463@18657381 necromartın@prismking#9103],,*,Oddgeir,C[1418 M33_Dn_Frost_Giant_Boss],"Mark of the Giant Slayer, Rank 2",Pn.Hip58y1,Physical,,59334.4,83661.5';
+
+    const parsed = parseCombatLogLine(line, 33753);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(parsed.event.abilityName).toBe("Mark of the Giant Slayer, Rank 2");
+    expect(parsed.event.abilityId).toBe("Pn.Hip58y1");
+    expect(parsed.event.effectType).toBe("Physical");
+    expect(parsed.event.magnitude).toBeCloseTo(59334.4);
+
+    const engine = new CombatAnalysisEngine();
+    engine.ingestLine(line);
+    const snapshot = engine.snapshot("real-combatlog.log");
+    const player = snapshot.players.find((item) => item.name === "necromartın");
+
+    expect(player?.totalDamage).toBeCloseTo(59334.4);
+    expect(player?.abilities.map((ability) => ability.name)).toContain(
+      "Mark of the Giant Slayer, Rank 2",
+    );
+  });
+
+  it("parses any quoted additional-damage name containing commas", () => {
+    const engine = new CombatAnalysisEngine();
+    const line =
+      '26:08:12:02:30:01.0::opop,P[518872298@18657381 opop@test#0001],,*,Frost Giant,C[23 Giant_Frost],"Additional Proc, Rank 3",Pn.genericquoted,Physical,Critical,7777,9000';
+
+    const parsed = parseCombatLogLine(line, 1);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.event.abilityName).toBe("Additional Proc, Rank 3");
+
+    engine.ingestLine(line);
+    const snapshot = engine.snapshot("test.log");
+    const player = snapshot.players.find((item) => item.name === "opop");
+    expect(player?.totalDamage).toBe(7777);
+    expect(player?.abilities.map((ability) => ability.name)).toContain(
+      "Additional Proc, Rank 3",
+    );
+  });
+
+  it("supports escaped quotes inside quoted combatlog fields", () => {
+    const line =
+      '26:08:12:02:30:02.0::opop,P[518872298@18657381 opop@test#0001],,*,Frost Giant,C[24 Giant_Frost],"Proc ""Alpha"", Rank 4",Pn.escapedquote,Physical,,1234,1234';
+    const parsed = parseCombatLogLine(line, 1);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.event.abilityName).toBe('Proc "Alpha", Rank 4');
+  });
+
   it("attributes proc damage when the player is present in source instead of owner", () => {
     const engine = new CombatAnalysisEngine();
 
