@@ -4,6 +4,7 @@ import { App } from "./App";
 import { DesktopEnhancements } from "./DesktopEnhancements";
 import { DisplaySettingsEnhancement } from "./DisplaySettingsEnhancement";
 import { EncounterDeletionEnhancement } from "./EncounterDeletionEnhancement";
+import { LanguageEnhancement } from "./LanguageEnhancement";
 import { Overlay } from "./Overlay";
 import "./styles.css";
 import "./enhancements.css";
@@ -15,6 +16,7 @@ if (isOverlay) document.documentElement.classList.add("overlay-document");
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
+    <LanguageEnhancement />
     {isOverlay ? (
       <Overlay />
     ) : (
