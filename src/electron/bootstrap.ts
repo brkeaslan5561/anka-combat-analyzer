@@ -1,4 +1,5 @@
 import { app } from "electron";
+import "./displayOverlayController";
 
 // GitHub release asset downloads can occasionally be refused by Chromium's
 // HTTP/2 connection (net::ERR_HTTP2_SERVER_REFUSED_STREAM). Force Electron's
