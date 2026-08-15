@@ -370,11 +370,13 @@ export type UiResolutionPreset =
   | "3840x2160";
 
 export type UiFontSize = "small" | "normal" | "large" | "xlarge";
+export type AppLanguage = "en" | "tr";
 
 export interface DisplayPreferences {
   uiResolutionPreset: UiResolutionPreset;
   uiFontSize: UiFontSize;
   overlayScale: number;
+  language: AppLanguage;
   overlayX?: number;
   overlayY?: number;
 }
