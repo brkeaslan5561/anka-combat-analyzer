@@ -4,9 +4,6 @@ import type { AppSettings } from "../shared/types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   overlayEnabled: false,
-  overlayScale: 1,
-  uiResolutionPreset: "1920x1080",
-  uiFontSize: "normal",
   timerRules: [],
 };
 
