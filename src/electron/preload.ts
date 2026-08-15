@@ -2,8 +2,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   ActiveTimerEvent,
   AnalyzerApi,
-  AppSettings,
   CombatSnapshot,
+  DisplayPreferences,
   DisplaySettingsPatch,
   MonitorStatus,
   TimerRule,
@@ -51,6 +51,7 @@ const api: AnalyzerApi = {
   toggleOverlay: () => ipcRenderer.invoke("toggle-overlay"),
   setOverlayEnabled: (enabled: boolean) =>
     ipcRenderer.invoke("set-overlay-enabled", enabled),
+  getDisplayPreferences: () => ipcRenderer.invoke("get-display-preferences"),
   updateDisplaySettings: (patch: DisplaySettingsPatch) =>
     ipcRenderer.invoke("update-display-settings", patch),
   beginOverlayMove: () => ipcRenderer.invoke("begin-overlay-move"),
@@ -64,8 +65,9 @@ const api: AnalyzerApi = {
   closeWindow: () => ipcRenderer.invoke("window-close"),
   onWindowMaximizedChanged: (callback: (maximized: boolean) => void) =>
     subscribe("window-maximized-changed", callback),
-  onSettingsChanged: (callback: (settings: AppSettings) => void) =>
-    subscribe("app-settings-changed", callback),
+  onDisplayPreferencesChanged: (
+    callback: (settings: DisplayPreferences) => void,
+  ) => subscribe("display-preferences-changed", callback),
   onOverlayMoveModeChanged: (callback: (moving: boolean) => void) =>
     subscribe("overlay-move-mode-changed", callback),
   onSnapshot: (callback: (snapshot: CombatSnapshot) => void) =>
