@@ -1,4 +1,8 @@
-import type { AppSettings, UiFontSize, UiResolutionPreset } from "./types";
+import type {
+  DisplayPreferences,
+  UiFontSize,
+  UiResolutionPreset,
+} from "./types";
 
 export const UI_RESOLUTION_OPTIONS: Array<{
   value: UiResolutionPreset;
@@ -26,7 +30,7 @@ export const UI_FONT_OPTIONS: Array<{
 export const OVERLAY_SCALE_OPTIONS = [0.8, 1, 1.2, 1.4] as const;
 
 export function getMainUiZoom(
-  settings: Pick<AppSettings, "uiResolutionPreset" | "uiFontSize">,
+  settings: Pick<DisplayPreferences, "uiResolutionPreset" | "uiFontSize">,
 ): number {
   const resolution =
     UI_RESOLUTION_OPTIONS.find(
