@@ -371,21 +371,20 @@ export type UiResolutionPreset =
 
 export type UiFontSize = "small" | "normal" | "large" | "xlarge";
 
-export interface DisplaySettingsPatch {
-  uiResolutionPreset?: UiResolutionPreset;
-  uiFontSize?: UiFontSize;
-  overlayScale?: number;
+export interface DisplayPreferences {
+  uiResolutionPreset: UiResolutionPreset;
+  uiFontSize: UiFontSize;
+  overlayScale: number;
+  overlayX?: number;
+  overlayY?: number;
 }
+
+export type DisplaySettingsPatch = Partial<DisplayPreferences>;
 
 export interface AppSettings {
   logFilePath?: string;
   logDirectoryPath?: string;
   overlayEnabled: boolean;
-  overlayX?: number;
-  overlayY?: number;
-  overlayScale?: number;
-  uiResolutionPreset?: UiResolutionPreset;
-  uiFontSize?: UiFontSize;
   preferredPlayerId?: string;
   preferredPlayerName?: string;
   timerRules: TimerRule[];
@@ -421,10 +420,11 @@ export interface AnalyzerApi {
   setPreferredPlayer(playerId: string, name: string): Promise<AppSettings>;
   toggleOverlay(): Promise<boolean>;
   setOverlayEnabled(enabled: boolean): Promise<boolean>;
-  updateDisplaySettings(patch: DisplaySettingsPatch): Promise<AppSettings>;
+  getDisplayPreferences(): Promise<DisplayPreferences>;
+  updateDisplaySettings(patch: DisplaySettingsPatch): Promise<DisplayPreferences>;
   beginOverlayMove(): Promise<boolean>;
-  finishOverlayMove(): Promise<AppSettings>;
-  resetOverlayPosition(): Promise<AppSettings>;
+  finishOverlayMove(): Promise<DisplayPreferences>;
+  resetOverlayPosition(): Promise<DisplayPreferences>;
   getUpdateStatus(): Promise<UpdateStatus>;
   downloadUpdate(): Promise<UpdateDownloadResult>;
   minimizeWindow(): Promise<void>;
@@ -432,7 +432,9 @@ export interface AnalyzerApi {
   isWindowMaximized(): Promise<boolean>;
   closeWindow(): Promise<void>;
   onWindowMaximizedChanged(callback: (maximized: boolean) => void): () => void;
-  onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
+  onDisplayPreferencesChanged(
+    callback: (settings: DisplayPreferences) => void,
+  ): () => void;
   onOverlayMoveModeChanged(callback: (moving: boolean) => void): () => void;
   onSnapshot(callback: (snapshot: CombatSnapshot) => void): () => void;
   onStatus(callback: (status: MonitorStatus) => void): () => void;
