@@ -1,5 +1,5 @@
 import { app } from "electron";
-import "./appLifecycleController";
+import { hasSingleInstanceLock } from "./appLifecycleController";
 import "./displayOverlayController";
 import "./windowVisibilityHotfix";
 
@@ -11,4 +11,6 @@ import "./windowVisibilityHotfix";
 app.commandLine.appendSwitch("disable-http2");
 app.commandLine.appendSwitch("disable-quic");
 
-void import("./main");
+if (hasSingleInstanceLock) {
+  void import("./main");
+}
