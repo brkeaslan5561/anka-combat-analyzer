@@ -1,4 +1,5 @@
 import { app } from "electron";
+import "./appLifecycleController";
 import "./displayOverlayController";
 import "./windowVisibilityHotfix";
 
