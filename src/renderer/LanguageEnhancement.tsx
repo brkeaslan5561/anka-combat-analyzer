@@ -3,6 +3,8 @@ import { translateUiText } from "../shared/i18n";
 import type { AppLanguage } from "../shared/types";
 
 const TRANSLATED_ATTRIBUTES = ["title", "aria-label", "placeholder"] as const;
+const textCanonicalEnglish = new WeakMap<Text, string>();
+const attributeCanonicalEnglish = new WeakMap<Element, Map<string, string>>();
 
 export function LanguageEnhancement() {
   const [language, setLanguage] = useState<AppLanguage>("en");
@@ -77,13 +79,9 @@ function translateElement(root: Element, language: AppLanguage): void {
   );
   let node = walker.nextNode();
   while (node) {
-    if (node.nodeType === Node.TEXT_NODE) {
+    if (node instanceof Text) {
       const parent = node.parentElement;
-      if (parent && !isExcludedElement(parent)) {
-        const current = node.nodeValue ?? "";
-        const translated = translateUiText(current, language);
-        if (translated !== current) node.nodeValue = translated;
-      }
+      if (parent && !isExcludedElement(parent)) translateTextNode(node, language);
     } else if (node instanceof Element) {
       translateAttributes(node, language);
     }
@@ -91,14 +89,49 @@ function translateElement(root: Element, language: AppLanguage): void {
   }
 }
 
+function translateTextNode(node: Text, language: AppLanguage): void {
+  const current = node.nodeValue ?? "";
+  const previousCanonical = textCanonicalEnglish.get(node);
+  const expectedCurrent = previousCanonical
+    ? targetText(previousCanonical, language)
+    : undefined;
+  const canonical =
+    previousCanonical && current === expectedCurrent
+      ? previousCanonical
+      : translateUiText(current, "en");
+  textCanonicalEnglish.set(node, canonical);
+  const translated = targetText(canonical, language);
+  if (translated !== current) node.nodeValue = translated;
+}
+
 function translateAttributes(element: Element, language: AppLanguage): void {
   if (isExcludedElement(element)) return;
+  let originals = attributeCanonicalEnglish.get(element);
+  if (!originals) {
+    originals = new Map<string, string>();
+    attributeCanonicalEnglish.set(element, originals);
+  }
   for (const attribute of TRANSLATED_ATTRIBUTES) {
     const current = element.getAttribute(attribute);
     if (!current) continue;
-    const translated = translateUiText(current, language);
+    const previousCanonical = originals.get(attribute);
+    const expectedCurrent = previousCanonical
+      ? targetText(previousCanonical, language)
+      : undefined;
+    const canonical =
+      previousCanonical && current === expectedCurrent
+        ? previousCanonical
+        : translateUiText(current, "en");
+    originals.set(attribute, canonical);
+    const translated = targetText(canonical, language);
     if (translated !== current) element.setAttribute(attribute, translated);
   }
+}
+
+function targetText(canonicalEnglish: string, language: AppLanguage): string {
+  return language === "en"
+    ? canonicalEnglish
+    : translateUiText(canonicalEnglish, "tr");
 }
 
 function isExcludedElement(element: Element): boolean {
