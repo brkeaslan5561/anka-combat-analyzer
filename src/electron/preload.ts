@@ -3,6 +3,8 @@ import type {
   ActiveTimerEvent,
   AnalyzerApi,
   CombatSnapshot,
+  DisplayPreferences,
+  DisplaySettingsPatch,
   MonitorStatus,
   TimerRule,
 } from "../shared/types";
@@ -49,6 +51,12 @@ const api: AnalyzerApi = {
   toggleOverlay: () => ipcRenderer.invoke("toggle-overlay"),
   setOverlayEnabled: (enabled: boolean) =>
     ipcRenderer.invoke("set-overlay-enabled", enabled),
+  getDisplayPreferences: () => ipcRenderer.invoke("get-display-preferences"),
+  updateDisplaySettings: (patch: DisplaySettingsPatch) =>
+    ipcRenderer.invoke("update-display-settings", patch),
+  beginOverlayMove: () => ipcRenderer.invoke("begin-overlay-move"),
+  finishOverlayMove: () => ipcRenderer.invoke("finish-overlay-move"),
+  resetOverlayPosition: () => ipcRenderer.invoke("reset-overlay-position"),
   getUpdateStatus: () => ipcRenderer.invoke("get-update-status"),
   downloadUpdate: () => ipcRenderer.invoke("download-update"),
   minimizeWindow: () => ipcRenderer.invoke("window-minimize"),
@@ -57,6 +65,11 @@ const api: AnalyzerApi = {
   closeWindow: () => ipcRenderer.invoke("window-close"),
   onWindowMaximizedChanged: (callback: (maximized: boolean) => void) =>
     subscribe("window-maximized-changed", callback),
+  onDisplayPreferencesChanged: (
+    callback: (settings: DisplayPreferences) => void,
+  ) => subscribe("display-preferences-changed", callback),
+  onOverlayMoveModeChanged: (callback: (moving: boolean) => void) =>
+    subscribe("overlay-move-mode-changed", callback),
   onSnapshot: (callback: (snapshot: CombatSnapshot) => void) =>
     subscribe("combat-snapshot", callback),
   onStatus: (callback: (status: MonitorStatus) => void) =>

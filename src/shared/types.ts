@@ -362,6 +362,25 @@ export interface UpdateDownloadResult {
   message: string;
 }
 
+export type UiResolutionPreset =
+  | "1280x720"
+  | "1600x900"
+  | "1920x1080"
+  | "2560x1440"
+  | "3840x2160";
+
+export type UiFontSize = "small" | "normal" | "large" | "xlarge";
+
+export interface DisplayPreferences {
+  uiResolutionPreset: UiResolutionPreset;
+  uiFontSize: UiFontSize;
+  overlayScale: number;
+  overlayX?: number;
+  overlayY?: number;
+}
+
+export type DisplaySettingsPatch = Partial<DisplayPreferences>;
+
 export interface AppSettings {
   logFilePath?: string;
   logDirectoryPath?: string;
@@ -401,6 +420,11 @@ export interface AnalyzerApi {
   setPreferredPlayer(playerId: string, name: string): Promise<AppSettings>;
   toggleOverlay(): Promise<boolean>;
   setOverlayEnabled(enabled: boolean): Promise<boolean>;
+  getDisplayPreferences(): Promise<DisplayPreferences>;
+  updateDisplaySettings(patch: DisplaySettingsPatch): Promise<DisplayPreferences>;
+  beginOverlayMove(): Promise<boolean>;
+  finishOverlayMove(): Promise<DisplayPreferences>;
+  resetOverlayPosition(): Promise<DisplayPreferences>;
   getUpdateStatus(): Promise<UpdateStatus>;
   downloadUpdate(): Promise<UpdateDownloadResult>;
   minimizeWindow(): Promise<void>;
@@ -408,6 +432,10 @@ export interface AnalyzerApi {
   isWindowMaximized(): Promise<boolean>;
   closeWindow(): Promise<void>;
   onWindowMaximizedChanged(callback: (maximized: boolean) => void): () => void;
+  onDisplayPreferencesChanged(
+    callback: (settings: DisplayPreferences) => void,
+  ): () => void;
+  onOverlayMoveModeChanged(callback: (moving: boolean) => void): () => void;
   onSnapshot(callback: (snapshot: CombatSnapshot) => void): () => void;
   onStatus(callback: (status: MonitorStatus) => void): () => void;
   onTimerStarted(callback: (event: ActiveTimerEvent) => void): () => void;
