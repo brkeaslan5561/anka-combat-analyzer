@@ -1,0 +1,155 @@
+.display-settings-button {
+  min-width: 58px;
+}
+
+.display-settings-popover {
+  position: fixed;
+  top: 74px;
+  right: 8px;
+  z-index: 5000;
+  width: 310px;
+  padding: 10px;
+  border: 1px solid #8fa0ad;
+  border-radius: 7px;
+  background: #f7f9fb;
+  box-shadow: 0 8px 28px rgba(20, 37, 50, 0.28);
+  color: #17212b;
+  -webkit-app-region: no-drag;
+}
+
+.display-settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #d5dde3;
+}
+
+.display-settings-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.display-settings-heading strong {
+  font-size: 12px;
+}
+
+.display-settings-heading small {
+  color: #6a7781;
+  font-size: 9px;
+}
+
+.display-settings-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #52616c;
+  font-size: 18px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.display-settings-close:hover {
+  background: #e7ecef;
+  color: #1f2b34;
+}
+
+.display-settings-field {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.display-settings-field > span {
+  color: #40505c;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.display-settings-field select {
+  min-width: 0;
+  height: 27px;
+  padding: 0 6px;
+  border: 1px solid #aab6bf;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f2b34;
+}
+
+.display-settings-overlay-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.display-settings-overlay-actions .header-button {
+  width: 100%;
+}
+
+.display-settings-help {
+  margin: 9px 1px 0;
+  color: #68757f;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.display-settings-message {
+  margin-top: 8px;
+  padding: 6px 7px;
+  border: 1px solid #b8cfdd;
+  border-radius: 4px;
+  background: #e8f4fb;
+  color: #23506b;
+  font-size: 9px;
+}
+
+.overlay-shell.moving {
+  -webkit-app-region: drag;
+  outline: 2px dashed rgba(96, 232, 211, 0.8);
+  outline-offset: -4px;
+}
+
+.overlay-move-bar {
+  width: max-content;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+  padding: 6px 7px;
+  border: 1px solid rgba(96, 232, 211, 0.55);
+  border-radius: 4px;
+  background: rgba(5, 18, 24, 0.9);
+  color: #e8fffb;
+  font-size: 9px;
+  font-weight: 650;
+  text-shadow: 0 1px 2px #000;
+}
+
+.overlay-move-bar button {
+  min-width: 48px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid #4ed6c2;
+  border-radius: 4px;
+  background: #137a6e;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  -webkit-app-region: no-drag;
+}
+
+.overlay-move-bar button:hover {
+  background: #0e665d;
+}
