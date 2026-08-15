@@ -4,7 +4,7 @@ const overlayWindows = new Set<BrowserWindow>();
 let primaryWindow: BrowserWindow | null = null;
 let quitting = false;
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+export const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
