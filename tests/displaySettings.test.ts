@@ -12,6 +12,7 @@ function preferences(
     uiResolutionPreset: "1920x1080",
     uiFontSize: "normal",
     overlayScale: 1,
+    language: "en",
     ...patch,
   };
 }

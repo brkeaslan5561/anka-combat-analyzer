@@ -6,6 +6,7 @@ import {
   UI_RESOLUTION_OPTIONS,
 } from "../shared/displaySettings";
 import type {
+  AppLanguage,
   DisplayPreferences,
   UiFontSize,
   UiResolutionPreset,
@@ -97,6 +98,22 @@ export function DisplaySettingsEnhancement() {
               ×
             </button>
           </div>
+
+          <label className="display-settings-field">
+            <span>Language</span>
+            <select
+              value={preferences.language}
+              onChange={(event) =>
+                void update(
+                  { language: event.target.value as AppLanguage },
+                  "Language updated.",
+                )
+              }
+            >
+              <option value="en">English</option>
+              <option value="tr">Türkçe</option>
+            </select>
+          </label>
 
           <label className="display-settings-field">
             <span>Resolution / UI size</span>

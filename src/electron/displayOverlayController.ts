@@ -7,7 +7,9 @@ import {
   UI_FONT_OPTIONS,
   UI_RESOLUTION_OPTIONS,
 } from "../shared/displaySettings";
+import { languageFromLocale } from "../shared/i18n";
 import type {
+  AppLanguage,
   DisplayPreferences,
   DisplaySettingsPatch,
   UiFontSize,
@@ -18,9 +20,9 @@ const BASE_OVERLAY_WIDTH = 380;
 const BASE_OVERLAY_HEIGHT = 330;
 const POSITION_SAVE_DELAY_MS = 180;
 
-const DEFAULT_PREFERENCES: DisplayPreferences = {
-  uiResolutionPreset: "1920x1080",
-  uiFontSize: "normal",
+const BASE_DEFAULT_PREFERENCES = {
+  uiResolutionPreset: "1920x1080" as UiResolutionPreset,
+  uiFontSize: "normal" as UiFontSize,
   overlayScale: 1,
 };
 
@@ -30,14 +32,23 @@ const RESOLUTIONS = new Set<UiResolutionPreset>(
 const FONT_SIZES = new Set<UiFontSize>(
   UI_FONT_OPTIONS.map((item) => item.value),
 );
+const LANGUAGES = new Set<AppLanguage>(["en", "tr"]);
 
-let preferences: DisplayPreferences = { ...DEFAULT_PREFERENCES };
+let defaultPreferences: DisplayPreferences = {
+  ...BASE_DEFAULT_PREFERENCES,
+  language: "en",
+};
+let preferences: DisplayPreferences = { ...defaultPreferences };
 let settingsPath = "";
 let overlayMoveMode = false;
 let positionSaveTimer: NodeJS.Timeout | null = null;
 const configuredOverlayWindows = new WeakSet<BrowserWindow>();
 
 const ready = app.whenReady().then(async () => {
+  defaultPreferences = {
+    ...BASE_DEFAULT_PREFERENCES,
+    language: languageFromLocale(app.getLocale()),
+  };
   settingsPath = path.join(app.getPath("userData"), "display-settings.json");
   preferences = await loadPreferences();
   for (const window of BrowserWindow.getAllWindows()) {
@@ -121,11 +132,9 @@ async function loadPreferences(): Promise<DisplayPreferences> {
   try {
     const raw = await fs.readFile(settingsPath, "utf8");
     const parsed = JSON.parse(raw) as Partial<DisplayPreferences>;
-    return sanitizePreferences({ ...DEFAULT_PREFERENCES, ...parsed });
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") throw error;
-    return { ...DEFAULT_PREFERENCES };
+    return sanitizePreferences({ ...defaultPreferences, ...parsed });
+  } catch {
+    return { ...defaultPreferences };
   }
 }
 
@@ -145,15 +154,19 @@ function sanitizePreferences(
     value.uiResolutionPreset as UiResolutionPreset,
   )
     ? (value.uiResolutionPreset as UiResolutionPreset)
-    : DEFAULT_PREFERENCES.uiResolutionPreset;
+    : defaultPreferences.uiResolutionPreset;
   const uiFontSize = FONT_SIZES.has(value.uiFontSize as UiFontSize)
     ? (value.uiFontSize as UiFontSize)
-    : DEFAULT_PREFERENCES.uiFontSize;
+    : defaultPreferences.uiFontSize;
+  const language = LANGUAGES.has(value.language as AppLanguage)
+    ? (value.language as AppLanguage)
+    : defaultPreferences.language;
   const overlayScale = normalizeOverlayScale(value.overlayScale);
   const next: DisplayPreferences = {
     uiResolutionPreset,
     uiFontSize,
     overlayScale,
+    language,
   };
   if (Number.isFinite(value.overlayX)) next.overlayX = Math.round(value.overlayX!);
   if (Number.isFinite(value.overlayY)) next.overlayY = Math.round(value.overlayY!);

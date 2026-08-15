@@ -1,22 +1,31 @@
-# Anka Combat Analyzer v1.1.10
+# Anka Combat Analyzer v1.1.11
 
-v1.1.9 sonrasında bazı Windows sistemlerinde uygulama işlemi Görev Yöneticisi'nde çalıştığı halde ana pencerenin görünmemesi için açılış hotfix'i.
+Overlay yaşam döngüsü düzeltildi ve Türkçe / English dil seçimi eklendi.
 
-## Düzeltmeler
+## Overlay düzeltmeleri
 
-- Ana pencere artık yalnızca Electron `ready-to-show` olayına bağlı kalmıyor.
-- Renderer yüklenir yüklenmez ana pencere görünür hale getiriliyor.
-- `ready-to-show` gecikir veya hiç oluşmazsa 2.5 saniyelik güvenlik fallback'i ana pencereyi zorla gösteriyor.
-- Renderer yükleme hatasında da pencere görünür kalıyor; uygulamanın arka planda görünmeden çalışması engelleniyor.
-- Visibility watchdog overlay penceresini ana pencere sanmıyor; timer overlay'in click-through / always-on-top davranışı korunuyor.
-- v1.1.9'daki Display ayarları, çözünürlük ve yazı ölçeği, overlay boyutu ve Move Overlay özellikleri korunuyor.
-- v1.1.8'deki combatlog/proc parsing düzeltmeleri korunuyor.
+- Ana Combat Analyzer penceresi kapandığında timer overlay artık kesin olarak kapanır.
+- Uygulama ana pencere kapatıldığında arka planda process olarak yaşamaya devam etmez.
+- Electron single-instance lock eklendi; uygulamayı ikinci kez açmak yeni bir process ve ikinci overlay oluşturmaz.
+- İkinci kez çalıştırma denemesinde mevcut ana pencere öne getirilir.
+- `Move Overlay` sonrasında iki ayrı overlay oluşmasına yol açan eski process/ikinci instance senaryosu engellendi.
+- v1.1.10 ana pencere görünürlük hotfix'i korunur.
+
+## Language / Dil
+
+- Display ayarlarına `Language` seçeneği eklendi: `English` ve `Türkçe`.
+- İlk kullanımda Windows dili Türkçeyse uygulama varsayılan olarak Türkçe açılır.
+- Windows dili Türkçe değilse varsayılan dil English olur.
+- Kullanıcının seçtiği dil kalıcı olarak kaydedilir ve Windows varsayılanını geçersiz kılar.
+- Ana arayüz, tablolar, açıklamalar, boş durum mesajları, timer ekranı, update kontrolleri, pencere kontrolleri, Display ayarları ve overlay metinleri Türkçeleştirildi.
+- `combatDPS`, `EncDPS`, `DPS`, `combatHPS`, `EncHPS`, Crit, Flank, Deflect ve Neverwinter'a özgü teknik/oyun terimleri çevrilmeden korunur.
+- Dil çalışma sırasında değiştirilebilir; uygulamayı yeniden başlatmak gerekmez.
 
 ## İndirme
 
-- `Anka-Combat-Analyzer-Setup-1.1.10-x64.exe`: normal Windows kurulumu ve mevcut kurulumların güncellenmesi için önerilen sürüm.
-- `Anka-Combat-Analyzer-Portable-1.1.10-x64.exe`: kurulum gerektirmeyen sürüm.
+- `Anka-Combat-Analyzer-Setup-1.1.11-x64.exe`: normal Windows kurulumu ve mevcut kurulumların güncellenmesi için önerilen sürüm.
+- `Anka-Combat-Analyzer-Portable-1.1.11-x64.exe`: kurulum gerektirmeyen sürüm.
 
-v1.1.9 kullanan kullanıcıların doğrudan v1.1.10'a geçmesi önerilir.
+v1.1.10 kullanan kullanıcılar uygulama içindeki Update kontrolü üzerinden v1.1.11'e geçebilir.
 
 Bu sürüm kod imzalama sertifikasıyla imzalanmamıştır. Windows SmartScreen ilk çalıştırmada “Bilinmeyen yayıncı” uyarısı gösterebilir. İndirdiğiniz dosyayı `SHA256SUMS.txt` ile doğrulayabilirsiniz.
