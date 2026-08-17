@@ -1,41 +1,47 @@
-# Anka Combat Analyzer v1.1.13
+# Anka Combat Analyzer v1.1.14
 
-Valkariel ve Zulkir gibi aynı trial içinde kısa aralıkla birbirine geçen gerçek boss fazlarının tek encounter altında birleşmesi düzeltildi. Değişiklik diğer dungeon/trial içeriklerini parçalamaması için konservatif korumalarla eklendi.
+M31 trialındaki Valkariel -> Zulkir phase ayrımı gerçek combatlog kimliklerine göre düzeltildi.
 
-## Boss phase handoff düzeltmesi
+## Neden v1.1.13 çalışmadı?
 
-- Normal encounter sistemi hâlâ temel olarak 10 saniyeden uzun hostile combat boşluğuna göre çalışır.
-- Buna yalnızca gerçek major/boss hedef geçişleri için dar kapsamlı bir kısa-handoff istisnası eklendi.
-- Valkariel -> Zulkir gibi önceki bossun hasar almayı bıraktığı ve birkaç saniye sonra farklı bir gerçek boss hedefinin başladığı durumlarda yeni encounter açılır.
-- Önceki hedefin encounter boyunca baskın hedef olması, en az 15 saniyelik encounter geçmişi, yeterli hit sayısı ve en az %45 hedef hasar payı gerekir.
-- Önceki major hedef en az 5 saniyedir oyunculardan hasar almıyor olmalıdır.
-- Yeni hedefin combatlog archetype bilgisinde boss yapısı bulunmalıdır; normal moblar ve sıradan elite hedefler bu kısa geçiş kuralını tetiklemez.
-- Add, minion, summon, clone, illusion, orb, portal, totem, pillar, tentacle, hand, shard ve fragment benzeri yardımcı/mekanik hedefler yeni boss fazı kabul edilmez.
-- Aynı görünür boss adına sahip farklı instance/form varyantları aynı faz kimliğini paylaşır. Örneğin Zulkir A/B/C ayrı encounter oluşturmaz.
-- Yeni boss benzeri hedef daha önce mevcut encounter içinde görülmüşse kısa-handoff ile tekrar bölünmez.
+- v1.1.13 testinde Zulkir internal ID'sinin `M31_Trial_Boss_Zulkir_...` biçiminde olduğu varsayılmıştı.
+- Gerçek kullanıcı combatlogunda Zulkirler şu kimliklerle geliyor:
+  - `M31_Trial_Zulkir_A` — Zulkir Kezaroth (Enlarged)
+  - `M31_Trial_Zulkir_B` — Zulkir Baalmede (Enlarged)
+  - `M31_Trial_Zulkir_C` — Zulkir Letheras (Enlarged)
+- Bu kimliklerde `Boss` kelimesi bulunmadığı için v1.1.13'ün kısa boss-handoff kuralı hiç tetiklenmiyordu.
 
-## Diğer içerikler için regresyon koruması
+## v1.1.14 düzeltmesi
 
-Test kapsamına özellikle şu senaryolar eklendi:
+- Gerçek `M31_Trial_Zulkir_A/B/C` ailesi M31'e özel tek mantıksal Zulkir fazı olarak tanınır.
+- Valkariel fazı bittikten sonra ilk gerçek Zulkir hedefi başladığında yeni encounter açılır.
+- Kezaroth, Baalmede ve Letheras farklı görünen adlara sahip olsa da A/B/C aynı Zulkir encounter'ında kalır.
+- Normal 10 saniyelik encounter-gap sistemi değiştirilmedi.
+- Genel boss algısı diğer dungeon/triallar için gevşetilmedi; bu düzeltme M31'in gerçek kimlikleriyle sınırlıdır.
 
-- Valkariel -> Zulkir: iki ayrı encounter olmalı.
-- Zulkir A/B/C: tek encounter kalmalı.
-- Boss + normal add: bölünmemeli.
-- İç ID'sinde Boss geçen fakat Add/mechanic olan yardımcı hedef: bölünmemeli.
-- Önceki boss yeterince uzun/dominant olmadan çıkan başka hedef: bölünmemeli.
-- Normal 10 saniyelik encounter gap davranışı değişmemeli.
-- 12 dakikalık All Encounters elapsed-time hesabı korunmalı.
-- Manuel + New / End / Fail davranışı değişmemeli.
+## Diğer içerikleri koruma
 
-## Önceki düzeltmeler korunur
+- Gerçek M31 logunda görülen `M31_Trial_Corrupted_Vortex_Ent`, `M31_Trial_Judgement_Beam_Ent`, Env Caster ve benzeri mekanikler yeni boss fazı kabul edilmez.
+- Helper/add kontrolü underscore içeren internal ID'lerde de çalışacak şekilde güçlendirildi; örneğin `Trial_Boss_Prime_Add` artık yalnızca display name'e güvenmeden helper olarak tanınır.
+- Boss + add, normal 10 saniyelik encounter ayrımı, All Encounters süresi ve manuel New / End / Fail davranışları korunur.
 
-- v1.1.12'de eklenen virgüllü entity adı parser düzeltmesi (`Valkariel, the Corrupted`) korunur.
-- v1.1.12 arka planda otomatik güncelleme sistemi korunur. v1.1.12 kullanan kurulu sürümler v1.1.13'e geçerken update dosyasını Windows Temp alanında indirip sessizce uygulayacaktır.
-- Türkçe / English dil seçimi, overlay konumu ve display scaling ayarları korunur.
+## Regresyon testleri
+
+- Gerçek Valkariel ID'si -> gerçek Zulkir A ID'si iki encounter üretir.
+- Zulkir A/B/C farklı display name'lerle tek encounter kalır.
+- M31 Corrupted Vortex ve Judgement Beam faz açmaz.
+- Internal ID'sinde `_Add` bulunan helper hedef faz açmaz.
+- Önceki encounter ve parser testleri korunur.
+
+## Önceki özellikler
+
+- Virgüllü entity isimlerinin parser düzeltmesi korunur.
+- Arka planda sessiz update sistemi korunur.
+- Türkçe / English, overlay konumu ve display scaling korunur.
 
 ## İndirme
 
-- `Anka-Combat-Analyzer-Setup-1.1.13-x64.exe`: normal Windows kurulumu için.
-- `Anka-Combat-Analyzer-Portable-1.1.13-x64.exe`: kurulum gerektirmeyen sürüm.
+- `Anka-Combat-Analyzer-Setup-1.1.14-x64.exe`
+- `Anka-Combat-Analyzer-Portable-1.1.14-x64.exe`
 
-Bu sürüm kod imzalama sertifikasıyla imzalanmamıştır. Windows SmartScreen ilk manuel kurulumda “Bilinmeyen yayıncı” uyarısı gösterebilir. İndirdiğiniz dosyayı `SHA256SUMS.txt` ile doğrulayabilirsiniz.
+Bu sürüm kod imzalama sertifikasıyla imzalanmamıştır. Windows SmartScreen ilk manuel kurulumda “Bilinmeyen yayıncı” uyarısı gösterebilir.
