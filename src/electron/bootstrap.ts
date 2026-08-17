@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { hasSingleInstanceLock } from "./appLifecycleController";
+import "./automaticUpdateController";
 import "./displayOverlayController";
 import "./windowVisibilityHotfix";
 
