@@ -30,6 +30,19 @@ describe("unquoted commas in Neverwinter entity display names", () => {
     );
   });
 
+  it("also repairs a comma-containing creature when it appears as the source", () => {
+    const line =
+      "26:08:16:15:10:40.6::Watts GWF,P[518824934@20850621 Watts GWF@wattdogg1017#8568],Valkariel, the Corrupted,C[29 M31_Trial_Boss_Valkariel],,*,Power at Any Cost,Pn.F77il21,Physical,,132955,174108";
+
+    const parsed = parseCombatLogLine(line, 104);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(parsed.event.source.displayName).toBe("Valkariel, the Corrupted");
+    expect(parsed.event.source.archetype).toBe("M31_Trial_Boss_Valkariel");
+    expect(parsed.event.abilityName).toBe("Power at Any Cost");
+  });
+
   it("handles any unquoted comma in a creature display name without a boss whitelist", () => {
     const line =
       "26:08:16:16:00:00.0::opop,P[1@2 opop@test],,*,Commander, the Fallen,C[123 Generic_Boss_Archetype],Generic Strike,Pn.generic,Physical,,125000,125000";
