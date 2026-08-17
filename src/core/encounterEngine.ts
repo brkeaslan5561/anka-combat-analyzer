@@ -56,25 +56,24 @@ const PHASE_TARGET_MIN_DURATION_MS = 15_000;
 const PHASE_TARGET_MIN_HITS = 12;
 const PHASE_TARGET_MIN_DAMAGE_SHARE = 0.45;
 const HELPER_TARGET_PATTERN =
-  /\b(add|minion|summon|clone|illusion|orb|portal|totem|pillar|tentacle|hand|shard|fragment)\b/i;
+  /\b(add|minion|summon|clone|illusion|orb|portal|totem|pillar|tentacle|hand|shard|fragment|vortex|beam|caster|mirage|lootdropper)\b/i;
+const M31_ZULKIR_ARCHETYPE_PATTERN = /^M31_Trial_Zulkir_([ABC])$/i;
+const M31_ZULKIR_PHASE_KEY = "m31:trial:zulkir";
 
 /**
  * Encounter segmentation stays intentionally simple for normal content:
  * hostile combat separated by more than the configured gap becomes a new
  * encounter. One extra safeguard handles scripted boss-to-boss handoffs that
- * happen inside that gap, such as Valkariel -> Zulkir.
+ * happen inside that gap, such as Valkariel -> the M31 Zulkir trio.
  *
- * The short handoff rule is deliberately conservative so other dungeons and
- * trials are not fragmented by adds or mechanics. It requires:
- * - a previously dominant major/boss target,
- * - meaningful duration, hit count and damage share,
- * - at least five seconds since that target last took player damage,
- * - a never-before-seen different major/boss target,
- * - and rejects obvious add/helper/mechanic entities.
+ * The generic handoff path remains conservative. M31's Zulkirs are a narrowly
+ * scoped exception based on identifiers observed in the real user combatlog:
+ * M31_Trial_Zulkir_A/B/C. Those IDs do not contain the word "Boss", so the old
+ * v1.1.13 heuristic could never recognize the transition. A/B/C share one phase
+ * key even though their visible names are Kezaroth, Baalmede and Letheras.
  *
- * Multiple instances/variants with the same visible name share one phase key,
- * so forms such as Zulkir A/B/C remain one encounter. Manual + New / End / Fail
- * controls remain authoritative.
+ * Normal dungeon/trial behavior is otherwise unchanged. Manual + New / End /
+ * Fail controls remain authoritative.
  */
 export class EncounterEngine {
   private readonly completed: EncounterAccumulator[] = [];
@@ -86,13 +85,10 @@ export class EncounterEngine {
     const hostile = isHostileCombatEvent(event);
     const encounterGapMs = this.encounterGapSeconds * 1_000;
 
-    // A newly-created manual encounter waits visibly for the first real combat
-    // line instead of collecting unrelated aura/heal noise.
     if (this.current?.manual && this.current.hostileEvents === 0 && !hostile) {
       return;
     }
 
-    // Normal automatic segmentation remains time-gap based.
     if (this.current && !this.current.manual && this.current.hostileEvents > 0) {
       const gap = event.timestamp - this.current.lastHostileAt;
       if (hostile && gap > encounterGapMs) {
@@ -102,8 +98,6 @@ export class EncounterEngine {
       }
     }
 
-    // Scripted phase changes can hand combat to a different boss after only a
-    // 5-9 second lull. Split only when the stricter major-target rules pass.
     if (
       this.current &&
       !this.current.manual &&
@@ -118,8 +112,6 @@ export class EncounterEngine {
       this.current = this.createEncounter(event.timestamp, false);
     }
 
-    // Manual placeholders use wall-clock time while waiting. Once combat starts,
-    // reset their timing to the first hostile event so their duration is exact.
     if (hostile && this.current.manual && this.current.hostileEvents === 0) {
       this.current.startedAt = event.timestamp;
       this.current.endedAt = event.timestamp;
@@ -144,7 +136,6 @@ export class EncounterEngine {
     return this.getAll().map((encounter) => this.toSummary(encounter));
   }
 
-  /** Sum of the actual combat bursts, retained for diagnostics. */
   getActiveCombatSeconds(): number {
     return this.getAll().reduce(
       (sum, encounter) =>
@@ -153,11 +144,6 @@ export class EncounterEngine {
     );
   }
 
-  /**
-   * Elapsed session time from the first hostile event to the latest hostile
-   * event. This is what All Encounters should use for its displayed duration
-   * and EncDPS denominator; gaps between pulls are not silently removed.
-   */
   getElapsedSeconds(): number {
     const encounters = this.getAll().filter((encounter) => encounter.hostileEvents > 0);
     if (encounters.length === 0) return 0;
@@ -283,8 +269,6 @@ export class EncounterEngine {
     const targets = [...encounter.damageTargets.values()];
     if (targets.length === 0) return false;
 
-    // If this logical target/name already participated in the encounter, it is
-    // a returning boss form/instance rather than a new phase handoff.
     if (targets.some((target) => target.phaseKey === nextPhaseKey)) return false;
 
     const dominant = [...targets].sort((left, right) => right.amount - left.amount)[0];
@@ -303,10 +287,6 @@ export class EncounterEngine {
     return oldTargetSilence >= PHASE_TARGET_SILENCE_MS;
   }
 
-  /**
-   * A simple encounter has a single phase. The phase object is retained only
-   * for API/UI compatibility with existing detail views.
-   */
   private ingestHostilePhase(
     event: CombatEvent,
     encounter: EncounterAccumulator,
@@ -439,29 +419,39 @@ export class EncounterEngine {
 }
 
 function phaseTargetKey(entity: CombatEntity): string {
+  const archetype = entity.archetype?.trim() ?? "";
+  if (M31_ZULKIR_ARCHETYPE_PATTERN.test(archetype)) {
+    return M31_ZULKIR_PHASE_KEY;
+  }
+
   const display = entity.displayName.trim().replace(/\s+/g, " ");
   if (display.length > 0) return display.toLocaleLowerCase("en-US");
-  return (entity.archetype ?? entity.stableId)
+  return (archetype || entity.stableId)
     .replace(/[_-](a|b|c|d|phase[_-]?\d+|form[_-]?\d+)$/i, "")
     .toLocaleLowerCase("en-US");
+}
+
+function normalizeHelperIdentity(value: string): string {
+  return value.replace(/[_-]+/g, " ");
 }
 
 function isMajorPhaseTarget(entity: CombatEntity): boolean {
   if (entity.kind !== "creature") return false;
   const archetype = entity.archetype ?? "";
-  const identity = `${entity.displayName} ${archetype}`;
+  const identity = normalizeHelperIdentity(`${entity.displayName} ${archetype}`);
   if (HELPER_TARGET_PATTERN.test(identity)) return false;
 
-  // The short-handoff exception intentionally uses structural combatlog boss
-  // metadata. Targets without a boss-like archetype still use the normal 10s
-  // encounter-gap rule, which keeps this change low-risk for other content.
+  if (M31_ZULKIR_ARCHETYPE_PATTERN.test(archetype)) return true;
   return archetype.toLocaleLowerCase("en-US").includes("boss");
 }
 
 function isMajorTargetAccumulator(target: EncounterTargetAccumulator): boolean {
-  const identity = `${target.name} ${target.archetype ?? ""}`;
+  const archetype = target.archetype ?? "";
+  const identity = normalizeHelperIdentity(`${target.name} ${archetype}`);
   if (HELPER_TARGET_PATTERN.test(identity)) return false;
-  return (target.archetype ?? "").toLocaleLowerCase("en-US").includes("boss");
+
+  if (M31_ZULKIR_ARCHETYPE_PATTERN.test(archetype)) return true;
+  return archetype.toLocaleLowerCase("en-US").includes("boss");
 }
 
 function toPhaseSummary(phase: PhaseAccumulator): PhaseSummary {
