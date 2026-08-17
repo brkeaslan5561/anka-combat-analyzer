@@ -1,4 +1,5 @@
 import type {
+  CombatEntity,
   CombatEvent,
   EntityAnalysis,
   EncounterSummary,
@@ -27,6 +28,8 @@ interface EncounterTargetAccumulator {
   name: string;
   stableId: string;
   instanceId: string;
+  archetype?: string;
+  phaseKey: string;
   amount: number;
   hits: number;
   firstSeenAt: number;
@@ -48,12 +51,30 @@ interface EncounterAccumulator {
   manual: boolean;
 }
 
+const PHASE_TARGET_SILENCE_MS = 5_000;
+const PHASE_TARGET_MIN_DURATION_MS = 15_000;
+const PHASE_TARGET_MIN_HITS = 12;
+const PHASE_TARGET_MIN_DAMAGE_SHARE = 0.45;
+const HELPER_TARGET_PATTERN =
+  /\b(add|minion|summon|clone|illusion|orb|portal|totem|pillar|tentacle|hand|shard|fragment)\b/i;
+
 /**
- * Deliberately simple encounter segmentation.
+ * Encounter segmentation stays intentionally simple for normal content:
+ * hostile combat separated by more than the configured gap becomes a new
+ * encounter. One extra safeguard handles scripted boss-to-boss handoffs that
+ * happen inside that gap, such as Valkariel -> Zulkir.
  *
- * Automatic encounters are separated only by a hostile-combat silence gap.
- * There is no boss/AOE detection, boss persistence, Kill-based close, or
- * automatic fail inference. Manual + New / End / Fail controls remain intact.
+ * The short handoff rule is deliberately conservative so other dungeons and
+ * trials are not fragmented by adds or mechanics. It requires:
+ * - a previously dominant major/boss target,
+ * - meaningful duration, hit count and damage share,
+ * - at least five seconds since that target last took player damage,
+ * - a never-before-seen different major/boss target,
+ * - and rejects obvious add/helper/mechanic entities.
+ *
+ * Multiple instances/variants with the same visible name share one phase key,
+ * so forms such as Zulkir A/B/C remain one encounter. Manual + New / End / Fail
+ * controls remain authoritative.
  */
 export class EncounterEngine {
   private readonly completed: EncounterAccumulator[] = [];
@@ -71,7 +92,7 @@ export class EncounterEngine {
       return;
     }
 
-    // Automatic segmentation is intentionally only time-gap based.
+    // Normal automatic segmentation remains time-gap based.
     if (this.current && !this.current.manual && this.current.hostileEvents > 0) {
       const gap = event.timestamp - this.current.lastHostileAt;
       if (hostile && gap > encounterGapMs) {
@@ -79,6 +100,17 @@ export class EncounterEngine {
       } else if (!hostile && gap > encounterGapMs) {
         return;
       }
+    }
+
+    // Scripted phase changes can hand combat to a different boss after only a
+    // 5-9 second lull. Split only when the stricter major-target rules pass.
+    if (
+      this.current &&
+      !this.current.manual &&
+      hostile &&
+      this.shouldSplitForMajorTargetTransition(event, this.current)
+    ) {
+      this.endCurrent();
     }
 
     if (!this.current) {
@@ -240,6 +272,37 @@ export class EncounterEngine {
     };
   }
 
+  private shouldSplitForMajorTargetTransition(
+    event: CombatEvent,
+    encounter: EncounterAccumulator,
+  ): boolean {
+    if (!isDamageToCreature(event) || event.target.kind !== "creature") return false;
+    if (!isMajorPhaseTarget(event.target)) return false;
+
+    const nextPhaseKey = phaseTargetKey(event.target);
+    const targets = [...encounter.damageTargets.values()];
+    if (targets.length === 0) return false;
+
+    // If this logical target/name already participated in the encounter, it is
+    // a returning boss form/instance rather than a new phase handoff.
+    if (targets.some((target) => target.phaseKey === nextPhaseKey)) return false;
+
+    const dominant = [...targets].sort((left, right) => right.amount - left.amount)[0];
+    if (!dominant || !isMajorTargetAccumulator(dominant)) return false;
+    if (dominant.phaseKey === nextPhaseKey) return false;
+
+    const durationMs = encounter.endedAt - encounter.startedAt;
+    if (durationMs < PHASE_TARGET_MIN_DURATION_MS) return false;
+    if (dominant.hits < PHASE_TARGET_MIN_HITS) return false;
+
+    const totalTargetDamage = targets.reduce((sum, target) => sum + target.amount, 0);
+    const dominantShare = totalTargetDamage > 0 ? dominant.amount / totalTargetDamage : 0;
+    if (dominantShare < PHASE_TARGET_MIN_DAMAGE_SHARE) return false;
+
+    const oldTargetSilence = event.timestamp - dominant.lastSeenAt;
+    return oldTargetSilence >= PHASE_TARGET_SILENCE_MS;
+  }
+
   /**
    * A simple encounter has a single phase. The phase object is retained only
    * for API/UI compatibility with existing detail views.
@@ -296,6 +359,8 @@ export class EncounterEngine {
       name: event.target.displayName,
       stableId: event.target.stableId,
       instanceId: event.target.instanceId,
+      archetype: event.target.archetype,
+      phaseKey: phaseTargetKey(event.target),
       amount: 0,
       hits: 0,
       firstSeenAt: event.timestamp,
@@ -303,6 +368,8 @@ export class EncounterEngine {
     };
     target.name = event.target.displayName;
     target.stableId = event.target.stableId;
+    target.archetype = event.target.archetype;
+    target.phaseKey = phaseTargetKey(event.target);
     target.amount += amount;
     target.hits += 1;
     target.firstSeenAt = Math.min(target.firstSeenAt, event.timestamp);
@@ -369,6 +436,32 @@ export class EncounterEngine {
         .sort((left, right) => right.damage - left.damage),
     };
   }
+}
+
+function phaseTargetKey(entity: CombatEntity): string {
+  const display = entity.displayName.trim().replace(/\s+/g, " ");
+  if (display.length > 0) return display.toLocaleLowerCase("en-US");
+  return (entity.archetype ?? entity.stableId)
+    .replace(/[_-](a|b|c|d|phase[_-]?\d+|form[_-]?\d+)$/i, "")
+    .toLocaleLowerCase("en-US");
+}
+
+function isMajorPhaseTarget(entity: CombatEntity): boolean {
+  if (entity.kind !== "creature") return false;
+  const archetype = entity.archetype ?? "";
+  const identity = `${entity.displayName} ${archetype}`;
+  if (HELPER_TARGET_PATTERN.test(identity)) return false;
+
+  // The short-handoff exception intentionally uses structural combatlog boss
+  // metadata. Targets without a boss-like archetype still use the normal 10s
+  // encounter-gap rule, which keeps this change low-risk for other content.
+  return archetype.toLocaleLowerCase("en-US").includes("boss");
+}
+
+function isMajorTargetAccumulator(target: EncounterTargetAccumulator): boolean {
+  const identity = `${target.name} ${target.archetype ?? ""}`;
+  if (HELPER_TARGET_PATTERN.test(identity)) return false;
+  return (target.archetype ?? "").toLocaleLowerCase("en-US").includes("boss");
 }
 
 function toPhaseSummary(phase: PhaseAccumulator): PhaseSummary {
