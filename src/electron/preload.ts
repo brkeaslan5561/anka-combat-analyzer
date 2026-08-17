@@ -58,7 +58,9 @@ const api: AnalyzerApi = {
   finishOverlayMove: () => ipcRenderer.invoke("finish-overlay-move"),
   resetOverlayPosition: () => ipcRenderer.invoke("reset-overlay-position"),
   getUpdateStatus: () => ipcRenderer.invoke("get-update-status"),
-  downloadUpdate: () => ipcRenderer.invoke("download-update"),
+  // Keep the public API stable, but route updates through the new temp/background
+  // installer so Setup.exe is no longer written into the user's Downloads folder.
+  downloadUpdate: () => ipcRenderer.invoke("install-latest-update"),
   minimizeWindow: () => ipcRenderer.invoke("window-minimize"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("window-toggle-maximize"),
   isWindowMaximized: () => ipcRenderer.invoke("window-is-maximized"),
