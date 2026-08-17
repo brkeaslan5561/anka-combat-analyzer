@@ -79,3 +79,6 @@ const api: AnalyzerApi = {
 };
 
 contextBridge.exposeInMainWorld("analyzer", api);
+contextBridge.exposeInMainWorld("ankaUpdater", {
+  installLatest: () => ipcRenderer.invoke("install-latest-update"),
+});
