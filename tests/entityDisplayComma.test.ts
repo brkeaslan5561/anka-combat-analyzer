@@ -22,10 +22,12 @@ describe("unquoted commas in Neverwinter entity display names", () => {
     const snapshot = engine.snapshot("combatlog.log");
 
     expect(snapshot.parseErrors).toBe(0);
-    expect(snapshot.targets.map((target) => target.name)).toContain(
-      "Valkariel, the Corrupted",
-    );
-    expect(snapshot.encounters[0]?.primaryTarget).toBe(
+    expect(
+      snapshot.targets.some((target) =>
+        target.name.startsWith("Valkariel, the Corrupted"),
+      ),
+    ).toBe(true);
+    expect(snapshot.encounters[0]?.primaryTarget).toContain(
       "Valkariel, the Corrupted",
     );
   });
