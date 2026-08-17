@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
-import { AutomaticUpdateEnhancement } from "./AutomaticUpdateEnhancement";
 import { DesktopEnhancements } from "./DesktopEnhancements";
 import { DisplaySettingsEnhancement } from "./DisplaySettingsEnhancement";
 import { EncounterDeletionEnhancement } from "./EncounterDeletionEnhancement";
@@ -24,7 +23,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <>
         <App />
         <DesktopEnhancements />
-        <AutomaticUpdateEnhancement />
         <EncounterDeletionEnhancement />
         <DisplaySettingsEnhancement />
       </>
