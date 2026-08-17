@@ -168,14 +168,43 @@ export function parseCombatLogLine(line: string, lineNumber: number): ParseResul
 }
 
 /**
- * Combatlog fields are CSV-like. Most lines contain no quoting, but Neverwinter
- * quotes a field when its display text itself contains a comma. For example:
- *   "Mark of the Giant Slayer, Rank 2"
- * A plain String.split(",") turns that valid 12-field line into 13 fields and
- * silently drops the proc. Parse quoted fields generically so any present or
- * future power/item name containing commas is handled without a name whitelist.
+ * Neverwinter's combatlog is only partly CSV-compliant.
+ *
+ * Quoted fields (for example "Mark of the Giant Slayer, Rank 2") are handled
+ * normally, but some entity display names contain an UNQUOTED comma, such as:
+ *
+ *   Valkariel, the Corrupted,C[29 M31_Trial_Boss_Valkariel]
+ *
+ * A normal CSV split sees that as two display-name fields and rejects the line
+ * for having 13 fields instead of 12. Recover the six entity fields from their
+ * structural raw IDs (P[...], C[...], * or an empty compact reference), then
+ * join any remaining pre-ability-ID tokens back into the ability display name.
+ * This is intentionally generic and does not whitelist any boss or NPC name.
  */
 function parseCombatFields(value: string): string[] {
+  const tokens = tokenizeCombatFields(value);
+  if (tokens.length < 12) return tokens;
+
+  // The final five logical fields are structurally fixed in the combatlog:
+  // abilityId, effectType, flags, magnitude, baseMagnitude.
+  const tail = tokens.slice(-5);
+  const prefix = tokens.slice(0, -5);
+  const logical: string[] = [];
+  let cursor = 0;
+
+  for (let pair = 0; pair < 3; pair += 1) {
+    const parsed = consumeEntityPair(prefix, cursor);
+    if (!parsed) return tokens;
+    logical.push(parsed.display, parsed.raw);
+    cursor = parsed.nextIndex;
+  }
+
+  if (cursor >= prefix.length) return tokens;
+  const abilityName = prefix.slice(cursor).join(",");
+  return [...logical, abilityName, ...tail];
+}
+
+function tokenizeCombatFields(value: string): string[] {
   const fields: string[] = [];
   let current = "";
   let quoted = false;
@@ -204,6 +233,48 @@ function parseCombatFields(value: string): string[] {
 
   fields.push(current);
   return fields;
+}
+
+function consumeEntityPair(
+  fields: string[],
+  startIndex: number,
+): { display: string; raw: string; nextIndex: number } | null {
+  if (startIndex >= fields.length) return null;
+
+  // The normal case, including compact blank references: display,raw.
+  if (startIndex + 1 < fields.length) {
+    const raw = fields[startIndex + 1] ?? "";
+    if (isEntityRawField(raw) || raw.trim().length === 0) {
+      return {
+        display: fields[startIndex] ?? "",
+        raw,
+        nextIndex: startIndex + 2,
+      };
+    }
+  }
+
+  // If the display itself contains unquoted commas, find the raw entity ID and
+  // join every preceding token back into the single display-name field.
+  for (let rawIndex = startIndex + 2; rawIndex < fields.length; rawIndex += 1) {
+    const raw = fields[rawIndex] ?? "";
+    if (!isEntityRawField(raw)) continue;
+    return {
+      display: fields.slice(startIndex, rawIndex).join(","),
+      raw,
+      nextIndex: rawIndex + 1,
+    };
+  }
+
+  return null;
+}
+
+function isEntityRawField(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed === "*" ||
+    PLAYER_PATTERN.test(trimmed) ||
+    CREATURE_PATTERN.test(trimmed)
+  );
 }
 
 function parseTimestamp(match: RegExpMatchArray): number {
