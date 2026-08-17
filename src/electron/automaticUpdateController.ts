@@ -24,7 +24,15 @@ export interface AutomaticUpdateResult {
 }
 
 ipcMain.handle("install-latest-update", async (): Promise<AutomaticUpdateResult> => {
-  return installLatestUpdate();
+  const result = await installLatestUpdate();
+  if (!result.success) return result;
+
+  // DesktopEnhancements historically opens an alert after downloadUpdate()
+  // resolves. A successful seamless update should instead close, update and
+  // restart without asking the user to dismiss a legacy success popup. A
+  // pending Promise alone does not keep Electron alive; app.quit() below still
+  // closes the process normally.
+  return new Promise<AutomaticUpdateResult>(() => undefined);
 });
 
 void app.whenReady().then(() => cleanupStaleUpdateFiles());
@@ -119,10 +127,7 @@ export function selectUpdateAsset(
   portable: boolean,
 ): ReleaseAsset | undefined {
   const preferred = portable ? /portable.*\.exe$/i : /setup.*\.exe$/i;
-  return (
-    assets.find((asset) => preferred.test(asset.name)) ??
-    assets.find((asset) => asset.name.toLocaleLowerCase("en-US").endsWith(".exe"))
-  );
+  return assets.find((asset) => preferred.test(asset.name));
 }
 
 export function verifyAssetDigest(
@@ -222,8 +227,10 @@ function compareVersions(left: string, right: string): number {
   const rightParts = normalizeVersion(right).split(".").map(Number);
   const length = Math.max(leftParts.length, rightParts.length);
   for (let index = 0; index < length; index += 1) {
-    const leftValue = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
-    const rightValue = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
+    const leftPart = leftParts[index];
+    const rightPart = rightParts[index];
+    const leftValue = Number.isFinite(leftPart) ? (leftPart ?? 0) : 0;
+    const rightValue = Number.isFinite(rightPart) ? (rightPart ?? 0) : 0;
     if (leftValue !== rightValue) return leftValue > rightValue ? 1 : -1;
   }
   return 0;
