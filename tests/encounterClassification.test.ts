@@ -77,6 +77,143 @@ describe("simple encounter segmentation", () => {
     expect(encounters[0]?.durationSeconds).toBe(10);
   });
 
+  it("Valkariel -> Zulkir gibi 10 saniyeden kısa gerçek boss handoffunu ayırır", () => {
+    const engine = new CombatAnalysisEngine();
+
+    for (let second = 0; second <= 59; second += 1) {
+      engine.ingestLine(
+        hit(
+          second,
+          "Valkariel, the Corrupted",
+          "C[29 M31_Trial_Boss_Valkariel]",
+          700,
+        ),
+      );
+    }
+
+    // Seven seconds after Valkariel last takes player damage, the scripted next
+    // boss phase starts. This is below the normal 10 second encounter gap.
+    engine.ingestLine(
+      hit(
+        66,
+        "Zulkir Kezaroth",
+        "C[30 M31_Trial_Boss_Zulkir_Kezaroth_A]",
+        800,
+      ),
+    );
+    engine.ingestLine(
+      hit(
+        67,
+        "Zulkir Kezaroth",
+        "C[31 M31_Trial_Boss_Zulkir_Kezaroth_B]",
+        800,
+      ),
+    );
+    engine.ingestLine(
+      hit(
+        68,
+        "Zulkir Kezaroth",
+        "C[32 M31_Trial_Boss_Zulkir_Kezaroth_C]",
+        800,
+      ),
+    );
+
+    const encounters = engine.snapshot("fixture.log").encounters;
+    expect(encounters).toHaveLength(2);
+    expect(encounters[0]?.primaryTarget).toBe("Valkariel, the Corrupted");
+    expect(encounters[1]?.primaryTarget).toBe("Zulkir Kezaroth");
+  });
+
+  it("aynı bossun A/B/C instance veya form varyantlarını ayrı encounter yapmaz", () => {
+    const engine = new CombatAnalysisEngine();
+
+    for (let second = 0; second <= 30; second += 1) {
+      engine.ingestLine(
+        hit(
+          second,
+          "Zulkir Kezaroth",
+          "C[30 M31_Trial_Boss_Zulkir_Kezaroth_A]",
+          800,
+        ),
+      );
+    }
+    engine.ingestLine(
+      hit(
+        36,
+        "Zulkir Kezaroth",
+        "C[31 M31_Trial_Boss_Zulkir_Kezaroth_B]",
+        800,
+      ),
+    );
+    engine.ingestLine(
+      hit(
+        37,
+        "Zulkir Kezaroth",
+        "C[32 M31_Trial_Boss_Zulkir_Kezaroth_C]",
+        800,
+      ),
+    );
+
+    const encounters = engine.snapshot("fixture.log").encounters;
+    expect(encounters).toHaveLength(1);
+    expect(encounters[0]?.primaryTarget).toBe("Zulkir Kezaroth");
+  });
+
+  it("boss add/mechanic hedefi görünürse gerçek boss fazını yanlış bölmez", () => {
+    const engine = new CombatAnalysisEngine();
+
+    for (let second = 0; second <= 30; second += 1) {
+      engine.ingestLine(
+        hit(second, "Prime Boss", "C[1 Trial_Boss_Prime]", 900),
+      );
+    }
+
+    // Even though the internal archetype contains Boss, the helper/add identity
+    // must not be treated as a new major phase after a short boss lull.
+    engine.ingestLine(
+      hit(36, "Prime Add", "C[2 Trial_Boss_Prime_Add]", 500),
+    );
+
+    const encounters = engine.snapshot("fixture.log").encounters;
+    expect(encounters).toHaveLength(1);
+    expect(encounters[0]?.primaryTarget).toBe("Prime Boss");
+  });
+
+  it("yeni boss benzeri hedef önceki hedef yeterince oturmadan çıkarsa bölmez", () => {
+    const engine = new CombatAnalysisEngine();
+
+    for (let second = 0; second <= 8; second += 1) {
+      engine.ingestLine(
+        hit(second, "Short Boss", "C[1 Trial_Boss_Short]", 900),
+      );
+    }
+    engine.ingestLine(
+      hit(14, "Second Boss", "C[2 Trial_Boss_Second]", 900),
+    );
+
+    const encounters = engine.snapshot("fixture.log").encounters;
+    expect(encounters).toHaveLength(1);
+  });
+
+  it("normal boss + sıradan add düzenini başka içeriklerde parçalamaz", () => {
+    const engine = new CombatAnalysisEngine();
+
+    for (let second = 0; second <= 25; second += 1) {
+      engine.ingestLine(
+        hit(second, "Dungeon Boss", "C[1 Dungeon_Boss_Main]", 1_000),
+      );
+      engine.ingestLine(
+        hit(second, "Dungeon Add", "C[20 Dungeon_Add]", 100),
+      );
+    }
+
+    engine.ingestLine(hit(31, "Dungeon Add", "C[21 Dungeon_Add]", 100));
+
+    const encounters = engine.snapshot("fixture.log").encounters;
+    expect(encounters).toHaveLength(1);
+    expect(encounters[0]?.primaryTarget).toBe("Dungeon Boss");
+  });
+
   it("All Encounters süresinde pull aralarını kesmez; 12 dakikalık run 12 dakika görünür", () => {
     const engine = new CombatAnalysisEngine();
 
