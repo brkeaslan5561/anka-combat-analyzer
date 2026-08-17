@@ -1,34 +1,41 @@
-# Anka Combat Analyzer v1.1.12
+# Anka Combat Analyzer v1.1.13
 
-Valkariel gibi adında virgül bulunan boss/NPC'lerin combatlog satırlarının kaybolması düzeltildi ve uygulama içi güncelleme süreci arka planda otomatik hale getirildi.
+Valkariel ve Zulkir gibi aynı trial içinde kısa aralıkla birbirine geçen gerçek boss fazlarının tek encounter altında birleşmesi düzeltildi. Değişiklik diğer dungeon/trial içeriklerini parçalamaması için konservatif korumalarla eklendi.
 
-## Combatlog parser düzeltmesi
+## Boss phase handoff düzeltmesi
 
-- Kullanıcıdan alınan gerçek M31 trial combatlogu incelendi.
-- Neverwinter bazı entity isimlerini CSV kurallarına uygun biçimde tırnaklamıyor. Örneğin `Valkariel, the Corrupted,C[29 M31_Trial_Boss_Valkariel]` satırındaki isim virgül içerdiği halde quoted değil.
-- Eski parser bu satırı 12 yerine 13 alan sanıp tamamen reddediyordu; bu yüzden Valkariel hedef/encounter verilerinde görünmüyordu ve ona verilen hasar kaybolabiliyordu.
-- Parser artık entity raw ID yapılarını (`P[...]`, `C[...]`, `*`) kullanarak owner/source/target alanlarını semantik olarak yeniden kuruyor.
-- Düzeltme Valkariel adına özel değildir; adında tırnaklanmamış virgül bulunan gelecekteki boss, NPC ve diğer entity'leri de destekler.
-- Quoted comma içeren ability/proc isimleri desteği korunur.
-- Gerçek `Valkariel, the Corrupted` satırı ve genel `Commander, the Fallen` örneği için regresyon testleri eklendi.
+- Normal encounter sistemi hâlâ temel olarak 10 saniyeden uzun hostile combat boşluğuna göre çalışır.
+- Buna yalnızca gerçek major/boss hedef geçişleri için dar kapsamlı bir kısa-handoff istisnası eklendi.
+- Valkariel -> Zulkir gibi önceki bossun hasar almayı bıraktığı ve birkaç saniye sonra farklı bir gerçek boss hedefinin başladığı durumlarda yeni encounter açılır.
+- Önceki hedefin encounter boyunca baskın hedef olması, en az 15 saniyelik encounter geçmişi, yeterli hit sayısı ve en az %45 hedef hasar payı gerekir.
+- Önceki major hedef en az 5 saniyedir oyunculardan hasar almıyor olmalıdır.
+- Yeni hedefin combatlog archetype bilgisinde boss yapısı bulunmalıdır; normal moblar ve sıradan elite hedefler bu kısa geçiş kuralını tetiklemez.
+- Add, minion, summon, clone, illusion, orb, portal, totem, pillar, tentacle, hand, shard ve fragment benzeri yardımcı/mekanik hedefler yeni boss fazı kabul edilmez.
+- Aynı görünür boss adına sahip farklı instance/form varyantları aynı faz kimliğini paylaşır. Örneğin Zulkir A/B/C ayrı encounter oluşturmaz.
+- Yeni boss benzeri hedef daha önce mevcut encounter içinde görülmüşse kısa-handoff ile tekrar bölünmez.
 
-## Arka planda otomatik güncelleme
+## Diğer içerikler için regresyon koruması
 
-- v1.1.12'den itibaren uygulama içindeki update düğmesi Setup EXE'yi kullanıcının Downloads klasörüne bırakmaz.
-- Güncelleme dosyası Windows temp alanına arka planda indirilir.
-- GitHub release asset'i SHA-256 digest sağlıyorsa indirilen dosya kurulmadan önce doğrulanır.
-- Kurulu Setup sürümünde güncelleme sessiz NSIS kurulumu ile uygulanır ve Analyzer yeniden açılır.
-- Portable sürümde Setup kurulmaz; yeni Portable EXE temp alanına indirilir ve mevcut portable dosya uygulama kapandıktan sonra kendi yerinde değiştirilip yeniden açılır.
-- Geçici update dosyaları kullanıcı Downloads klasöründe kalmaz; eski temp dosyaları da temizlenir.
-- Teknik olarak yeni sürüm dosyalarının indirilmesi yine gereklidir, ancak indirme/kurulum kullanıcıdan Setup dosyası yönetmesini istemeden arka planda gerçekleşir.
+Test kapsamına özellikle şu senaryolar eklendi:
 
-## Geçiş notu
+- Valkariel -> Zulkir: iki ayrı encounter olmalı.
+- Zulkir A/B/C: tek encounter kalmalı.
+- Boss + normal add: bölünmemeli.
+- İç ID'sinde Boss geçen fakat Add/mechanic olan yardımcı hedef: bölünmemeli.
+- Önceki boss yeterince uzun/dominant olmadan çıkan başka hedef: bölünmemeli.
+- Normal 10 saniyelik encounter gap davranışı değişmemeli.
+- 12 dakikalık All Encounters elapsed-time hesabı korunmalı.
+- Manuel + New / End / Fail davranışı değişmemeli.
 
-v1.1.11'in updater kodu eski olduğu için `v1.1.11 → v1.1.12` geçişi son kez görünür Setup indirmesi kullanabilir. v1.1.12 kurulduktan sonraki güncellemeler yeni arka plan updater'ını kullanacaktır.
+## Önceki düzeltmeler korunur
+
+- v1.1.12'de eklenen virgüllü entity adı parser düzeltmesi (`Valkariel, the Corrupted`) korunur.
+- v1.1.12 arka planda otomatik güncelleme sistemi korunur. v1.1.12 kullanan kurulu sürümler v1.1.13'e geçerken update dosyasını Windows Temp alanında indirip sessizce uygulayacaktır.
+- Türkçe / English dil seçimi, overlay konumu ve display scaling ayarları korunur.
 
 ## İndirme
 
-- `Anka-Combat-Analyzer-Setup-1.1.12-x64.exe`: normal Windows kurulumu ve mevcut kurulumların güncellenmesi için önerilen sürüm.
-- `Anka-Combat-Analyzer-Portable-1.1.12-x64.exe`: kurulum gerektirmeyen sürüm.
+- `Anka-Combat-Analyzer-Setup-1.1.13-x64.exe`: normal Windows kurulumu için.
+- `Anka-Combat-Analyzer-Portable-1.1.13-x64.exe`: kurulum gerektirmeyen sürüm.
 
 Bu sürüm kod imzalama sertifikasıyla imzalanmamıştır. Windows SmartScreen ilk manuel kurulumda “Bilinmeyen yayıncı” uyarısı gösterebilir. İndirdiğiniz dosyayı `SHA256SUMS.txt` ile doğrulayabilirsiniz.
