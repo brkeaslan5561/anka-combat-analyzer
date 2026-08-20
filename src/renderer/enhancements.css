@@ -196,6 +196,10 @@
   display: block;
 }
 
+.run-encounters[hidden] {
+  display: none;
+}
+
 .tree-row.run-row {
   font-weight: 650;
   background: #eef2f5;

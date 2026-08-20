@@ -64,6 +64,13 @@ describe("player detail scrolling styles", () => {
     expect(app.match(/tableHeight, setTableHeight\] = useState\(70\)/g)).toHaveLength(1);
   });
 
+  it("lets run headings expand and collapse their encounters", () => {
+    expect(app).toContain("collapsedRunIds, setCollapsedRunIds");
+    expect(app).toContain("onClick={() => toggleRun(run.id)}");
+    expect(app).toContain("aria-expanded={!collapsed}");
+    expect(app).toContain("hidden={collapsed}");
+  });
+
   it("removes the ranking bar graph and shows Deflect instead of Effectiveness", () => {
     expect(app).not.toContain("function DamageGraph");
     expect(app).not.toContain("Resize table and damage graph");

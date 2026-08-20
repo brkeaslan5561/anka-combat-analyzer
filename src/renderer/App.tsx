@@ -108,6 +108,9 @@ export function App() {
   const [hiddenEncounterIds, setHiddenEncounterIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [collapsedRunIds, setCollapsedRunIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [sidebarSplitPercent, setSidebarSplitPercent] = useState(72);
   const [selectedEntityId, setSelectedEntityId] = useState<string>();
   const [selectedDetail, setSelectedDetail] = useState<EntityAnalysis | null>(null);
@@ -147,6 +150,7 @@ export function App() {
 
   useEffect(() => {
     setCheckedEncounterIds(new Set());
+    setCollapsedRunIds(new Set());
     setScopeSelection({ kind: "all" });
     if (!snapshot) {
       setHiddenEncounterIds(new Set());
@@ -163,6 +167,16 @@ export function App() {
       snapshot?.encounters.filter((item) => !hiddenEncounterIds.has(item.id)) ?? [],
     [hiddenEncounterIds, snapshot],
   );
+
+  function toggleRun(runId: string): void {
+    setCollapsedRunIds((current) => {
+      const next = new Set(current);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
+    setScopeSelection({ kind: "run", runId });
+  }
 
   const scopedEncounterIds = useMemo(() => {
     if (!snapshot) return [];
@@ -583,17 +597,28 @@ export function App() {
                     if (encounters.length === 0) return null;
                     const selected =
                       scopeSelection.kind === "run" && scopeSelection.runId === run.id;
+                    const collapsed = collapsedRunIds.has(run.id);
+                    const encounterListId = `run-encounters-${run.id}`;
                     return (
                       <div className="run-group" key={run.id}>
                         <button
                           className={`tree-row run-row ${selected ? "selected" : ""}`}
-                          onClick={() => setScopeSelection({ kind: "run", runId: run.id })}
+                          onClick={() => toggleRun(run.id)}
+                          aria-expanded={!collapsed}
+                          aria-controls={encounterListId}
+                          title={collapsed ? "Expand run encounters" : "Collapse run encounters"}
                         >
-                          <span className="tree-toggle">▾</span>
+                          <span className="tree-toggle" aria-hidden="true">
+                            {collapsed ? "▸" : "▾"}
+                          </span>
                           <span>Run {run.index}{run.contentKey ? ` · ${run.contentKey}` : ""}{run.active ? " · Active" : ""}</span>
                           <small>{formatDuration(scopeDuration(snapshot, encounters.map((item) => item.id), "elapsed"))}</small>
                         </button>
-                        <div className="run-encounters">
+                        <div
+                          className="run-encounters"
+                          id={encounterListId}
+                          hidden={collapsed}
+                        >
                           {encounters.map((item) => (
                             <div className="tree-branch encounter-deletable" key={item.id}>
                               <label className="encounter-check" title="Include in a custom merged scope">
