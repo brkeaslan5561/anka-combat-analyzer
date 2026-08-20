@@ -18,6 +18,7 @@ type IncomingMessage =
   | { type: "load"; filePath: string }
   | { type: "reset" }
   | { type: "start-new-encounter" }
+  | { type: "start-new-run" }
   | { type: "end-encounter" }
   | { type: "mark-encounter-fail" }
   | {
@@ -80,6 +81,9 @@ parentPort.on("message", (message: IncomingMessage) => {
     void clearAndTail();
   } else if (message.type === "start-new-encounter") {
     engine.startNewEncounter();
+    if (currentFilePath) postSnapshot(engine.snapshot(currentFilePath, false));
+  } else if (message.type === "start-new-run") {
+    engine.startNewRun();
     if (currentFilePath) postSnapshot(engine.snapshot(currentFilePath, false));
   } else if (message.type === "end-encounter") {
     engine.endEncounter();

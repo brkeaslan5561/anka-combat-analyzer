@@ -153,7 +153,7 @@ function EncounterControls() {
     };
   }, []);
 
-  const run = async (action: "start" | "end" | "fail") => {
+  const run = async (action: "start" | "new-run" | "end" | "fail") => {
     if (action === "start") {
       setManualActive(true);
       await window.analyzer.startNewEncounter();
@@ -165,6 +165,10 @@ function EncounterControls() {
     if (action === "fail") {
       setManualActive(false);
       await window.analyzer.markEncounterFail();
+    }
+    if (action === "new-run") {
+      setManualActive(true);
+      await window.analyzer.startNewRun();
     }
   };
 
@@ -180,6 +184,12 @@ function EncounterControls() {
         onClick={() => void run("start")}
       >
         {manualActive ? "● Manual Active" : "+ New"}
+      </button>
+      <button
+        title="Finish the previous run and start a fresh run scope"
+        onClick={() => void run("new-run")}
+      >
+        New Run
       </button>
       <button
         title="End the current encounter now"

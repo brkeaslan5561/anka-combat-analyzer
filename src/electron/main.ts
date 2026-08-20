@@ -318,6 +318,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle("start-new-encounter", () => {
     logWorker?.postMessage({ type: "start-new-encounter" });
   });
+  ipcMain.handle("start-new-run", () => {
+    logWorker?.postMessage({ type: "start-new-run" });
+  });
   ipcMain.handle("end-encounter", () => {
     logWorker?.postMessage({ type: "end-encounter" });
   });

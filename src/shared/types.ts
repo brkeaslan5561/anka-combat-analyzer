@@ -256,6 +256,9 @@ export interface EnemyPowerSummary {
 export interface EncounterSummary {
   id: string;
   index: number;
+  runId: string;
+  runIndex: number;
+  contentKey?: string;
   startedAt: number;
   endedAt: number;
   durationSeconds: number;
@@ -281,6 +284,19 @@ export interface EncounterSummary {
   }>;
 }
 
+export interface CombatRunSummary {
+  id: string;
+  index: number;
+  startedAt: number;
+  endedAt: number;
+  durationSeconds: number;
+  totalDamage: number;
+  totalHealing: number;
+  encounterIds: string[];
+  contentKey?: string;
+  active: boolean;
+}
+
 export interface CombatSnapshot {
   generatedAt: number;
   filePath: string;
@@ -298,6 +314,7 @@ export interface CombatSnapshot {
   rawEvents: RawEventSummary[];
   enemyPowers: EnemyPowerSummary[];
   encounters: EncounterSummary[];
+  runs: CombatRunSummary[];
 }
 
 export interface PowerCastEvent {
@@ -403,6 +420,7 @@ export interface AnalyzerApi {
   saveData(): Promise<string | null>;
   clearData(): Promise<void>;
   startNewEncounter(): Promise<void>;
+  startNewRun(): Promise<void>;
   endEncounter(): Promise<void>;
   markEncounterFail(): Promise<void>;
   getEntityDetail(
