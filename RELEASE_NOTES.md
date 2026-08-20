@@ -1,47 +1,38 @@
-# Anka Combat Analyzer v1.1.14
+# Anka Combat Analyzer v1.1.15
 
-M31 trialındaki Valkariel -> Zulkir phase ayrımı gerçek combatlog kimliklerine göre düzeltildi.
+Bu sürüm encounter ve tur yönetimini yeniler, seçili encounter analizini ekler ve Neverwinter combat log hesaplamalarındaki çeşitli hataları düzeltir.
 
-## Neden v1.1.13 çalışmadı?
+## Tur ve encounter gruplama
 
-- v1.1.13 testinde Zulkir internal ID'sinin `M31_Trial_Boss_Zulkir_...` biçiminde olduğu varsayılmıştı.
-- Gerçek kullanıcı combatlogunda Zulkirler şu kimliklerle geliyor:
-  - `M31_Trial_Zulkir_A` — Zulkir Kezaroth (Enlarged)
-  - `M31_Trial_Zulkir_B` — Zulkir Baalmede (Enlarged)
-  - `M31_Trial_Zulkir_C` — Zulkir Letheras (Enlarged)
-- Bu kimliklerde `Boss` kelimesi bulunmadığı için v1.1.13'ün kısa boss-handoff kuralı hiç tetiklenmiyordu.
+- Encounter'lar dungeon/trial turlarına göre üst başlıklar altında gruplanır.
+- İçerik değiştiğinde veya uzun bir combat arası oluştuğunda yeni tur otomatik olarak başlar.
+- Gerektiğinde **New Run** ile manuel olarak yeni tur açılabilir.
+- Tur başlıkları altındaki encounter'lar ayrı ayrı görüntülenebilir.
 
-## v1.1.14 düzeltmesi
+## Silme, seçim ve birleştirme
 
-- Gerçek `M31_Trial_Zulkir_A/B/C` ailesi M31'e özel tek mantıksal Zulkir fazı olarak tanınır.
-- Valkariel fazı bittikten sonra ilk gerçek Zulkir hedefi başladığında yeni encounter açılır.
-- Kezaroth, Baalmede ve Letheras farklı görünen adlara sahip olsa da A/B/C aynı Zulkir encounter'ında kalır.
-- Normal 10 saniyelik encounter-gap sistemi değiştirilmedi.
-- Genel boss algısı diğer dungeon/triallar için gevşetilmedi; bu düzeltme M31'in gerçek kimlikleriyle sınırlıdır.
+- Soldan silinen encounter artık **All** toplamına dahil edilmez.
+- Kaldırılan encounter'lar gerektiğinde geri yüklenebilir.
+- İstenen encounter'lar seçilip **Merge Selected** ile tek bir analiz kapsamı olarak görüntülenebilir.
+- Seçili encounter birleşimlerinde süre, DPS, HPS ve diğer istatistikler yalnızca seçilen encounter'lardan hesaplanır.
 
-## Diğer içerikleri koruma
+## Neverwinter hesaplama düzeltmeleri
 
-- Gerçek M31 logunda görülen `M31_Trial_Corrupted_Vortex_Ent`, `M31_Trial_Judgement_Beam_Ent`, Env Caster ve benzeri mekanikler yeni boss fazı kabul edilmez.
-- Helper/add kontrolü underscore içeren internal ID'lerde de çalışacak şekilde güçlendirildi; örneğin `Trial_Boss_Prime_Add` artık yalnızca display name'e güvenmeden helper olarak tanınır.
-- Boss + add, normal 10 saniyelik encounter ayrımı, All Encounters süresi ve manuel New / End / Fail davranışları korunur.
+- Combat dışındaki healing ve resource olaylarının encounter toplamlarını şişirmesi engellendi.
+- Sadece görüntü adı sağlayan `ShowPowerDisplayName` satırlarının hasar sayılması engellendi.
+- Sıfır büyüklüklü ölüm kayıtları ve shield/mitigation olayları daha doğru yorumlanır.
+- Knight's Valor kaynak atfı düzeltildi.
+- Healing aktif süresi, DPS aktif süresinden ayrılarak combat HPS hesabı düzeltildi.
+- Oyuncu encounter geçmişi seçili analiz kapsamına göre filtrelenir.
 
-## Regresyon testleri
+## Doğrulama
 
-- Gerçek Valkariel ID'si -> gerçek Zulkir A ID'si iki encounter üretir.
-- Zulkir A/B/C farklı display name'lerle tek encounter kalır.
-- M31 Corrupted Vortex ve Judgement Beam faz açmaz.
-- Internal ID'sinde `_Add` bulunan helper hedef faz açmaz.
-- Önceki encounter ve parser testleri korunur.
-
-## Önceki özellikler
-
-- Virgüllü entity isimlerinin parser düzeltmesi korunur.
-- Arka planda sessiz update sistemi korunur.
-- Türkçe / English, overlay konumu ve display scaling korunur.
+- Encounter scope ve Neverwinter semantik davranışları için regresyon testleri eklendi.
+- Type-check, test, build ve worker smoke kontrolleri çalıştırıldı.
 
 ## İndirme
 
-- `Anka-Combat-Analyzer-Setup-1.1.14-x64.exe`
-- `Anka-Combat-Analyzer-Portable-1.1.14-x64.exe`
+- `Anka-Combat-Analyzer-Setup-1.1.15-x64.exe`
+- `Anka-Combat-Analyzer-Portable-1.1.15-x64.exe`
 
 Bu sürüm kod imzalama sertifikasıyla imzalanmamıştır. Windows SmartScreen ilk manuel kurulumda “Bilinmeyen yayıncı” uyarısı gösterebilir.
