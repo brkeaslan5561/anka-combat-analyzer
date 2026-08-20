@@ -10,7 +10,7 @@ import type {
   TargetBreakdown,
 } from "../shared/types";
 import {
-  DAMAGE_EFFECT_TYPES,
+  isDamageEvent,
   isHealingEvent,
   isIgnoredCombatEvent,
   isMitigationEvent,
@@ -69,6 +69,7 @@ interface EntityAccumulator {
   firstSeenAt: number;
   lastSeenAt: number;
   activity: ActivityAccumulator;
+  healingActivity: ActivityAccumulator;
   outgoingDamage: number;
   outgoingHealing: number;
   incomingDamage: number;
@@ -145,7 +146,11 @@ export class StatisticsAccumulator {
     const actor = this.resolveActor(event, owner, source);
     if (!actor) return;
 
-    if (DAMAGE_EFFECT_TYPES.has(event.effectType) && event.magnitude >= 0) {
+    if (hasFlag(event, "Kill") && target) {
+      this.recordDeath(event, actor, target);
+    }
+
+    if (isDamageEvent(event) && event.magnitude >= 0) {
       this.ingestDamage(event, actor, target);
       return;
     }
@@ -215,6 +220,30 @@ export class StatisticsAccumulator {
     this.petOwners.clear();
     this.deaths.length = 0;
     this.rawEvents.length = 0;
+  }
+
+  /** Merge completed scopes without replaying or retaining every combat event. */
+  mergeFrom(source: StatisticsAccumulator): void {
+    for (const [key, owner] of source.petOwners) {
+      this.petOwners.set(key, { ...owner });
+    }
+    for (const [key, entity] of source.entities) {
+      const current = this.entities.get(key);
+      if (current) {
+        mergeEntityAccumulators(current, entity, this.maxEntityHits);
+      } else {
+        this.entities.set(key, cloneEntityAccumulator(entity, this.maxEntityHits));
+      }
+    }
+    this.deaths.push(...source.deaths.map((death) => ({ ...death })));
+    this.rawEvents.push(...source.rawEvents.map((event) => ({
+      ...event,
+      flags: [...event.flags],
+    })));
+    this.rawEvents.sort((left, right) => left.timestamp - right.timestamp);
+    if (this.rawEvents.length > MAX_RAW_EVENTS) {
+      this.rawEvents.splice(0, this.rawEvents.length - MAX_RAW_EVENTS);
+    }
   }
 
   getEntityDetail(
@@ -322,20 +351,25 @@ export class StatisticsAccumulator {
     pushCapped(actor.individualOutHits, hit, this.maxEntityHits);
     pushCapped(target.individualInHits, hit, this.maxEntityHits);
 
-    if (hasFlag(event, "Kill")) {
-      actor.kills += 1;
-      target.deaths += 1;
-      this.deaths.push({
-        id: `death-${event.lineNumber}`,
-        timestamp: event.timestamp,
-        victimId: target.entityId,
-        victimName: target.name,
-        killerId: actor.entityId,
-        killerName: actor.name,
-        powerName: event.abilityName,
-        amount,
-      });
-    }
+  }
+
+  private recordDeath(
+    event: CombatEvent,
+    actor: EntityAccumulator,
+    target: EntityAccumulator,
+  ): void {
+    actor.kills += 1;
+    target.deaths += 1;
+    this.deaths.push({
+      id: `death-${event.lineNumber}`,
+      timestamp: event.timestamp,
+      victimId: target.entityId,
+      victimName: target.name,
+      killerId: actor.entityId,
+      killerName: actor.name,
+      powerName: event.abilityName,
+      amount: Math.max(0, event.magnitude),
+    });
   }
 
   private ingestHealing(
@@ -344,6 +378,7 @@ export class StatisticsAccumulator {
     target: EntityAccumulator | null,
   ): void {
     const amount = Math.abs(event.magnitude);
+    this.touchHealing(actor, event.timestamp);
     actor.outgoingHealing += amount;
     actor.healingHits += 1;
     actor.healingCriticalHits += hasFlag(event, "Critical") ? 1 : 0;
@@ -374,8 +409,9 @@ export class StatisticsAccumulator {
     target: EntityAccumulator | null,
   ): void {
     if (!target) return;
-    const amount = Math.abs(event.magnitude);
-    this.touch(actor, event.timestamp);
+    const amount = Math.abs(
+      event.baseMagnitude !== 0 ? event.baseMagnitude : event.magnitude,
+    );
     target.mitigation += amount;
     target.mitigationEvents += 1;
     target.mitigationMaxHit = Math.max(target.mitigationMaxHit, amount);
@@ -432,6 +468,10 @@ export class StatisticsAccumulator {
     owner: EntityAccumulator | null,
     source: EntityAccumulator | null,
   ): EntityAccumulator | null {
+    // Knight's Valor redirects enemy damage through a player owner field. The
+    // Neverwinter ACT parser explicitly attributes this record source -> target.
+    if (event.abilityId === "Pn.Wypyjw1" && source) return source;
+
     if (!this.splitPetDamage) {
       const knownPet = source?.isPet ? source : owner?.isPet ? owner : null;
       if (knownPet?.ownerPlayerId) {
@@ -494,6 +534,11 @@ export class StatisticsAccumulator {
       firstSeenAt: timestamp,
       lastSeenAt: timestamp,
       activity: {
+        segmentStartedAt: null,
+        lastActiveAt: null,
+        completedSeconds: 0,
+      },
+      healingActivity: {
         segmentStartedAt: null,
         lastActiveAt: null,
         completedSeconds: 0,
@@ -584,23 +629,11 @@ export class StatisticsAccumulator {
   }
 
   private touch(entity: EntityAccumulator, timestamp: number): void {
-    const activity = entity.activity;
-    if (
-      activity.segmentStartedAt === null ||
-      activity.lastActiveAt === null
-    ) {
-      activity.segmentStartedAt = timestamp;
-      activity.lastActiveAt = timestamp;
-      return;
-    }
-    if (timestamp - activity.lastActiveAt > ACTIVITY_GAP_MS) {
-      activity.completedSeconds += Math.max(
-        1,
-        (activity.lastActiveAt - activity.segmentStartedAt) / 1_000,
-      );
-      activity.segmentStartedAt = timestamp;
-    }
-    activity.lastActiveAt = Math.max(activity.lastActiveAt, timestamp);
+    touchActivity(entity.activity, timestamp);
+  }
+
+  private touchHealing(entity: EntityAccumulator, timestamp: number): void {
+    touchActivity(entity.healingActivity, timestamp);
   }
 
   private buildEntity(
@@ -612,6 +645,7 @@ export class StatisticsAccumulator {
     includeDetails: boolean,
   ): EntityAnalysis {
     const activeSeconds = getActiveSeconds(entity.activity);
+    const healingActiveSeconds = getActiveSeconds(entity.healingActivity);
     return {
       entityId: entity.entityId,
       stableId: entity.stableId,
@@ -638,7 +672,7 @@ export class StatisticsAccumulator {
         totalDamageTaken > 0 ? entity.incomingDamage / totalDamageTaken : 0,
       combatDps: entity.outgoingDamage / activeSeconds,
       encDps: entity.outgoingDamage / durationSeconds,
-      combatHps: entity.outgoingHealing / activeSeconds,
+      combatHps: entity.outgoingHealing / healingActiveSeconds,
       encHps: entity.outgoingHealing / durationSeconds,
       hits: entity.hits,
       swings: entity.swings,
@@ -683,7 +717,7 @@ export class StatisticsAccumulator {
         ? buildPowers(
             entity.outgoingHealingPowers,
             entity.outgoingHealing,
-            activeSeconds,
+            healingActiveSeconds,
             durationSeconds,
           )
         : [],
@@ -808,6 +842,9 @@ function mergeEntityAccumulators(
   target.firstSeenAt = Math.min(target.firstSeenAt, source.firstSeenAt);
   target.lastSeenAt = Math.max(target.lastSeenAt, source.lastSeenAt);
   target.activity.completedSeconds += getTrackedSeconds(source.activity);
+  target.healingActivity.completedSeconds += getTrackedSeconds(
+    source.healingActivity,
+  );
 
   const additiveFields: Array<keyof EntityAccumulator> = [
     "outgoingDamage",
@@ -857,7 +894,7 @@ function mergeEntityAccumulators(
   for (const [key, sourceTarget] of source.targets) {
     const current = target.targets.get(key);
     if (!current) {
-      target.targets.set(key, sourceTarget);
+      target.targets.set(key, { ...sourceTarget });
       continue;
     }
     current.amount += sourceTarget.amount;
@@ -865,12 +902,18 @@ function mergeEntityAccumulators(
     current.maxHit = Math.max(current.maxHit, sourceTarget.maxHit);
   }
   for (const hit of source.individualOutHits) {
-    hit.sourceId = target.entityId;
-    pushCapped(target.individualOutHits, hit, maximumHits);
+    pushCapped(
+      target.individualOutHits,
+      { ...hit, flags: [...hit.flags], sourceId: target.entityId },
+      maximumHits,
+    );
   }
   for (const hit of source.individualInHits) {
-    hit.targetId = target.entityId;
-    pushCapped(target.individualInHits, hit, maximumHits);
+    pushCapped(
+      target.individualInHits,
+      { ...hit, flags: [...hit.flags], targetId: target.entityId },
+      maximumHits,
+    );
   }
 }
 
@@ -881,7 +924,7 @@ function mergePowerMaps(
   for (const [key, sourcePower] of source) {
     const power = target.get(key);
     if (!power) {
-      target.set(key, sourcePower);
+      target.set(key, clonePowerAccumulator(sourcePower));
       continue;
     }
     power.amount += sourcePower.amount;
@@ -895,6 +938,63 @@ function mergePowerMaps(
     power.deflectHits += sourcePower.deflectHits;
     power.values.push(...sourcePower.values);
   }
+}
+
+function cloneEntityAccumulator(
+  source: EntityAccumulator,
+  maximumHits: number,
+): EntityAccumulator {
+  return {
+    ...source,
+    activity: { ...source.activity },
+    healingActivity: { ...source.healingActivity },
+    outgoingDamagePowers: clonePowerMap(source.outgoingDamagePowers),
+    outgoingHealingPowers: clonePowerMap(source.outgoingHealingPowers),
+    incomingDamagePowers: clonePowerMap(source.incomingDamagePowers),
+    incomingHealingPowers: clonePowerMap(source.incomingHealingPowers),
+    mitigationPowers: clonePowerMap(source.mitigationPowers),
+    actionPointDetails: clonePowerMap(source.actionPointDetails),
+    targets: new Map(
+      [...source.targets].map(([key, target]) => [key, { ...target }]),
+    ),
+    individualOutHits: source.individualOutHits
+      .slice(-maximumHits)
+      .map((hit) => ({ ...hit, flags: [...hit.flags] })),
+    individualInHits: source.individualInHits
+      .slice(-maximumHits)
+      .map((hit) => ({ ...hit, flags: [...hit.flags] })),
+  };
+}
+
+function clonePowerMap(
+  source: Map<string, PowerAccumulator>,
+): Map<string, PowerAccumulator> {
+  return new Map(
+    [...source].map(([key, power]) => [key, clonePowerAccumulator(power)]),
+  );
+}
+
+function clonePowerAccumulator(source: PowerAccumulator): PowerAccumulator {
+  return { ...source, values: [...source.values] };
+}
+
+function touchActivity(activity: ActivityAccumulator, timestamp: number): void {
+  if (
+    activity.segmentStartedAt === null ||
+    activity.lastActiveAt === null
+  ) {
+    activity.segmentStartedAt = timestamp;
+    activity.lastActiveAt = timestamp;
+    return;
+  }
+  if (timestamp - activity.lastActiveAt > ACTIVITY_GAP_MS) {
+    activity.completedSeconds += Math.max(
+      1,
+      (activity.lastActiveAt - activity.segmentStartedAt) / 1_000,
+    );
+    activity.segmentStartedAt = timestamp;
+  }
+  activity.lastActiveAt = Math.max(activity.lastActiveAt, timestamp);
 }
 
 function getTrackedSeconds(activity: ActivityAccumulator): number {

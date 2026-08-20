@@ -57,9 +57,11 @@ export class CombatAnalysisEngine {
         ? event.timestamp
         : Math.max(this.lastEventAt, event.timestamp);
 
-    this.mergedStatistics.ingest(event);
-    this.splitStatistics.ingest(event);
-    this.encounterEngine.ingest(event);
+    const includedInEncounter = this.encounterEngine.ingest(event);
+    if (includedInEncounter) {
+      this.mergedStatistics.ingest(event);
+      this.splitStatistics.ingest(event);
+    }
 
     if (!isEnemyPowerObservation(event)) return null;
     const observation: PowerObservation = {
@@ -85,6 +87,7 @@ export class CombatAnalysisEngine {
     );
     const merged = this.mergedStatistics.build(activeCombatSeconds, false);
     const split = this.splitStatistics.build(activeCombatSeconds, false);
+    const encounters = this.encounterEngine.getSummaries();
     const playerDetails = merged.entities
       .filter(
         (entity) => entity.kind === "player" && entity.outgoingDamage > 0,
@@ -121,12 +124,17 @@ export class CombatAnalysisEngine {
       deaths: merged.deaths,
       rawEvents: merged.rawEvents,
       enemyPowers: this.cachedEnemyPowers,
-      encounters: this.encounterEngine.getSummaries(),
+      encounters,
+      runs: this.encounterEngine.getRunSummaries(encounters),
     };
   }
 
   startNewEncounter(): void {
     this.encounterEngine.startNewEncounter();
+  }
+
+  startNewRun(): void {
+    this.encounterEngine.startNewRun();
   }
 
   endEncounter(): void {

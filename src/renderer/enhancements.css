@@ -161,10 +161,110 @@
   flex: 1 1 auto;
 }
 
+.encounter-selection-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: #f7f9fa;
+}
+
+.encounter-selection-toolbar button {
+  min-width: 0;
+  height: 23px;
+  padding: 0 6px;
+  overflow: hidden;
+  border: 1px solid #c7d0d7;
+  border-radius: 4px;
+  color: #33414b;
+  background: #fff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+}
+
+.encounter-selection-toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.run-group,
+.run-encounters {
+  display: block;
+}
+
+.tree-row.run-row {
+  font-weight: 650;
+  background: #eef2f5;
+}
+
+.tree-row.run-row:hover {
+  background: #e2edf4;
+}
+
+.tree-row.run-row.selected {
+  background: var(--blue);
+}
+
+.tree-branch.encounter-deletable {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 1px;
+  margin-left: 13px;
+}
+
+.tree-branch.encounter-deletable > .tree-row {
+  width: 100%;
+  margin: 0;
+}
+
+.encounter-check {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+}
+
+.encounter-check input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+}
+
+.encounter-delete-button {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #7b858d;
+  background: transparent;
+  cursor: pointer;
+  font: 600 15px/1 Arial, sans-serif;
+  opacity: 0.25;
+}
+
+.tree-branch.encounter-deletable:hover .encounter-delete-button,
+.encounter-delete-button:focus-visible {
+  opacity: 0.85;
+}
+
+.encounter-delete-button:hover {
+  color: #fff;
+  background: #c83832;
+  opacity: 1;
+}
+
 .encounter-controls {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 5px;
   padding: 6px;
   border-top: 1px solid rgba(0, 0, 0, 0.08);

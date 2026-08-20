@@ -13,6 +13,9 @@ Neverwinter `Combatlog.Log` dosyasını geçmişten ve canlı olarak analiz eden
 - Combat Analysis, Enemy Powers ve Timers alanlarını ayrı sekme biçimleri ve belirgin aktif durumla toplama
 - Üst çalışma alanlarında beyaz aktif sekme, daha belirgin gri pasif sekmeler ve mavi üst vurgu
 - Encounter ağacı ile Entity gezginini aynı sade sol panelde gösterme
+- Encounter'ları tur (Run) üst başlıkları altında toplama; önceki turun toplamını ve alt encounter'larını birlikte koruma
+- Checkbox ile seçilen encounter'ları tek birleşik analiz kapsamında görüntüleme
+- Silinen encounter'ı All Encounters, tur toplamı ve oyuncu geçmişi dahil tüm analiz kapsamlarından çıkarma; gerektiğinde geri yükleme
 - Sürüklenerek yüksekliği ayarlanabilen Encounter/Entity ve oyuncu tablo/halka grafik bölmeleri
 - Ana Encounter sıralamasını gereksiz grafik olmadan tam yükseklikte gösterme
 - Oyuncu güç tablolarının altında hasar paylarını yüzdeleriyle gösteren halka dağılım grafiği
@@ -62,7 +65,8 @@ Neverwinter `Combatlog.Log` dosyasını geçmişten ve canlı olarak analiz eden
 - Oyuncu güç ve hit tablolarında normal pencereye sığan kompakt sütun genişlikleri
 - Boss saldırılarını seçip oyunculara ne kadar vurduğunu; oyuncuyu seçip hangi saldırılardan hasar aldığını inceleme
 - HitPoints, Shield, Kill, Power, Soulweave ve Divinity log olaylarından healing, mitigation, deaths ve resource istatistikleri
-- 20 saniyelik hostile inactivity ile otomatik encounter ayrımı
+- 10 saniyelik hostile inactivity ile otomatik encounter ayrımı
+- Güvenilir içerik kimliği değişiminde veya 10 dakikalık combat boşluğunda otomatik yeni tur; logdan anlaşılamayan aynı-zindan tekrarları için `New Run` denetimi
 - Düzenli tekrar eden düşman güçlerinin frekans analizi ve güven puanı
 - Kullanıcının düzenleyebildiği düşman gücü zamanlayıcıları ve tıklamayı engellemeyen overlay
 - Seçilen log dosyasını 500 ms aralıkla canlı takip

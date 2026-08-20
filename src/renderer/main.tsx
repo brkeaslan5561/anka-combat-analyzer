@@ -3,12 +3,10 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { DesktopEnhancements } from "./DesktopEnhancements";
 import { DisplaySettingsEnhancement } from "./DisplaySettingsEnhancement";
-import { EncounterDeletionEnhancement } from "./EncounterDeletionEnhancement";
 import { LanguageEnhancement } from "./LanguageEnhancement";
 import { Overlay } from "./Overlay";
 import "./styles.css";
 import "./enhancements.css";
-import "./encounterDeletion.css";
 import "./displaySettings.css";
 
 const isOverlay = new URLSearchParams(window.location.search).get("overlay") === "1";
@@ -23,7 +21,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <>
         <App />
         <DesktopEnhancements />
-        <EncounterDeletionEnhancement />
         <DisplaySettingsEnhancement />
       </>
     )}

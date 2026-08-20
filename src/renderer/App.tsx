@@ -5,6 +5,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import packageJson from "../../package.json";
 import type {
   CombatSnapshot,
   DeathSummary,
@@ -15,6 +16,7 @@ import type {
   PowerBreakdown,
   TimerRule,
 } from "../shared/types";
+import { createAggregateScopeId } from "../shared/analysisScope";
 import {
   filterHitsForPowers,
   filterHitsForTarget,
@@ -54,7 +56,16 @@ interface ScopeView {
   totalHealing: number;
   entities: EntityAnalysis[];
   deaths: DeathSummary[];
+  encounterIds: string[];
 }
+
+type ScopeSelection =
+  | { kind: "all" }
+  | { kind: "encounter"; encounterId: string }
+  | { kind: "run"; runId: string }
+  | { kind: "selection"; encounterIds: string[] };
+
+const HIDDEN_ENCOUNTER_STORAGE_PREFIX = "anka:hidden-encounters:";
 
 const ANALYSIS_TABS: Array<{ id: MainTab; label: string }> = [
   { id: "encounter", label: "Encounter" },
@@ -90,7 +101,13 @@ export function App() {
   const [tab, setTab] = useState<MainTab>("encounter");
   const [lastAnalysisTab, setLastAnalysisTab] = useState<MainTab>("encounter");
   const [detailTab, setDetailTab] = useState<DetailTab>("outgoingDamage");
-  const [selectedEncounterId, setSelectedEncounterId] = useState("all");
+  const [scopeSelection, setScopeSelection] = useState<ScopeSelection>({ kind: "all" });
+  const [checkedEncounterIds, setCheckedEncounterIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [hiddenEncounterIds, setHiddenEncounterIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [sidebarSplitPercent, setSidebarSplitPercent] = useState(72);
   const [selectedEntityId, setSelectedEntityId] = useState<string>();
   const [selectedDetail, setSelectedDetail] = useState<EntityAnalysis | null>(null);
@@ -128,20 +145,69 @@ export function App() {
     };
   }, []);
 
-  const encounter = useMemo(
+  useEffect(() => {
+    setCheckedEncounterIds(new Set());
+    setScopeSelection({ kind: "all" });
+    if (!snapshot) {
+      setHiddenEncounterIds(new Set());
+      return;
+    }
+    const known = new Set(snapshot.encounters.map((item) => item.id));
+    setHiddenEncounterIds(
+      new Set(readHiddenEncounterIds(snapshot.filePath).filter((id) => known.has(id))),
+    );
+  }, [snapshot?.filePath]);
+
+  const visibleEncounters = useMemo(
     () =>
-      selectedEncounterId === "all"
-        ? null
-        : snapshot?.encounters.find(
-            (item) => item.id === selectedEncounterId,
-          ) ?? null,
-    [selectedEncounterId, snapshot],
+      snapshot?.encounters.filter((item) => !hiddenEncounterIds.has(item.id)) ?? [],
+    [hiddenEncounterIds, snapshot],
   );
 
-  const selectedScopeId = encounter?.id ?? "all";
+  const scopedEncounterIds = useMemo(() => {
+    if (!snapshot) return [];
+    if (scopeSelection.kind === "all") {
+      return visibleEncounters.map((item) => item.id);
+    }
+    if (scopeSelection.kind === "encounter") {
+      return hiddenEncounterIds.has(scopeSelection.encounterId)
+        ? []
+        : [scopeSelection.encounterId];
+    }
+    if (scopeSelection.kind === "run") {
+      const run = snapshot.runs.find((item) => item.id === scopeSelection.runId);
+      return (run?.encounterIds ?? []).filter((id) => !hiddenEncounterIds.has(id));
+    }
+    return scopeSelection.encounterIds.filter(
+      (id) => !hiddenEncounterIds.has(id),
+    );
+  }, [hiddenEncounterIds, scopeSelection, snapshot, visibleEncounters]);
+
+  const selectedScopeId = useMemo(() => {
+    if (scopeSelection.kind === "encounter" && scopedEncounterIds[0]) {
+      return scopedEncounterIds[0];
+    }
+    if (
+      scopeSelection.kind === "all" &&
+      snapshot &&
+      scopedEncounterIds.length === snapshot.encounters.length
+    ) {
+      return "all";
+    }
+    return createAggregateScopeId(
+      scopedEncounterIds,
+      scopeSelection.kind === "selection" ? "sum" : "elapsed",
+    );
+  }, [scopeSelection, scopedEncounterIds, snapshot]);
 
   useEffect(() => {
-    if (!snapshot || selectedScopeId === "all") return;
+    if (scopeSelection.kind !== "all" && scopedEncounterIds.length === 0) {
+      setScopeSelection({ kind: "all" });
+    }
+  }, [scopeSelection.kind, scopedEncounterIds.length]);
+
+  useEffect(() => {
+    if (!snapshot) return;
     let cancelled = false;
     void window.analyzer
       .getScopeEntities(selectedScopeId, splitPetDamage)
@@ -163,7 +229,9 @@ export function App() {
       snapshot
         ? buildScope(
             snapshot,
-            encounter,
+            scopeSelection,
+            scopedEncounterIds,
+            selectedScopeId,
             splitPetDamage,
             remoteScope?.scopeId === selectedScopeId &&
               remoteScope.splitPetDamage === splitPetDamage
@@ -171,7 +239,7 @@ export function App() {
               : [],
           )
         : null,
-    [encounter, remoteScope, selectedScopeId, snapshot, splitPetDamage],
+    [remoteScope, scopeSelection, scopedEncounterIds, selectedScopeId, snapshot, splitPetDamage],
   );
 
   useEffect(() => {
@@ -281,7 +349,56 @@ export function App() {
   };
 
   const selectEncounter = (id: string) => {
-    setSelectedEncounterId(id);
+    setScopeSelection(
+      id === "all"
+        ? { kind: "all" }
+        : { kind: "encounter", encounterId: id },
+    );
+  };
+
+  const toggleEncounterChecked = (id: string) => {
+    setCheckedEncounterIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const mergeCheckedEncounters = () => {
+    const encounterIds = visibleEncounters
+      .map((item) => item.id)
+      .filter((id) => checkedEncounterIds.has(id));
+    if (encounterIds.length === 0) return;
+    setScopeSelection({ kind: "selection", encounterIds });
+  };
+
+  const deleteEncounter = (id: string) => {
+    if (!snapshot) return;
+    const encounter = snapshot.encounters.find((item) => item.id === id);
+    if (!encounter) return;
+    if (
+      !window.confirm(
+        `Remove this encounter from every analysis scope?\n\n${encounter.index}. ${encounter.primaryTarget}`,
+      )
+    ) return;
+
+    const next = new Set(hiddenEncounterIds);
+    next.add(id);
+    setHiddenEncounterIds(next);
+    writeHiddenEncounterIds(snapshot.filePath, next);
+    setCheckedEncounterIds((current) => {
+      const checked = new Set(current);
+      checked.delete(id);
+      return checked;
+    });
+  };
+
+  const restoreDeletedEncounters = () => {
+    if (!snapshot) return;
+    const empty = new Set<string>();
+    setHiddenEncounterIds(empty);
+    writeHiddenEncounterIds(snapshot.filePath, empty);
   };
 
   const saveSuggestedTimer = async (power: EnemyPowerSummary) => {
@@ -309,7 +426,9 @@ export function App() {
   const clearData = async () => {
     if (!window.confirm("Yüklenmiş analiz verisi temizlensin mi?")) return;
     setSnapshot(null);
-    setSelectedEncounterId("all");
+    setScopeSelection({ kind: "all" });
+    setCheckedEncounterIds(new Set());
+    setHiddenEncounterIds(new Set());
     await window.analyzer.clearData();
   };
 
@@ -333,7 +452,7 @@ export function App() {
             ? `${formatFileName(snapshot.filePath)} · Log Time: ${formatTime(snapshot.lastEventAt)}`
             : "No combatlog selected"}
         </span>
-        <span className="titlebar-version">v1.0.0</span>
+        <span className="titlebar-version">v{packageJson.version}</span>
       </header>
 
       <div className="toolbar-row">
@@ -431,29 +550,78 @@ export function App() {
               >
                 <div className="pane-title">
                   <span>Encounters</span>
-                  <small>{snapshot.encounters.length}</small>
+                  <small>{visibleEncounters.length}</small>
+                </div>
+                <div className="encounter-selection-toolbar">
+                  <button
+                    disabled={checkedEncounterIds.size === 0}
+                    onClick={mergeCheckedEncounters}
+                    title="Show only the checked encounters as one combined scope"
+                  >
+                    Merge selected ({checkedEncounterIds.size})
+                  </button>
+                  {checkedEncounterIds.size > 0 && (
+                    <button onClick={() => setCheckedEncounterIds(new Set())}>Clear</button>
+                  )}
+                  {hiddenEncounterIds.size > 0 && (
+                    <button onClick={restoreDeletedEncounters}>Restore removed</button>
+                  )}
                 </div>
                 <div className="encounter-tree">
                   <button
-                    className={`tree-row root ${selectedEncounterId === "all" ? "selected" : ""}`}
+                    className={`tree-row root ${scopeSelection.kind === "all" ? "selected" : ""}`}
                     onClick={() => selectEncounter("all")}
                   >
                     <span className="tree-toggle">−</span>
                     <span>All Encounters</span>
-                    <small>{formatDuration(snapshot.activeCombatSeconds)}</small>
+                    <small>{formatDuration(scopeDuration(snapshot, visibleEncounters.map((item) => item.id), "elapsed"))}</small>
                   </button>
-                  {snapshot.encounters.map((item) => {
-                    const selected = selectedEncounterId === item.id;
+                  {snapshot.runs.map((run) => {
+                    const encounters = visibleEncounters.filter(
+                      (item) => item.runId === run.id,
+                    );
+                    if (encounters.length === 0) return null;
+                    const selected =
+                      scopeSelection.kind === "run" && scopeSelection.runId === run.id;
                     return (
-                      <div className="tree-branch" key={item.id}>
+                      <div className="run-group" key={run.id}>
                         <button
-                          className={`tree-row ${selected ? "selected" : ""}`}
-                          onClick={() => selectEncounter(item.id)}
+                          className={`tree-row run-row ${selected ? "selected" : ""}`}
+                          onClick={() => setScopeSelection({ kind: "run", runId: run.id })}
                         >
-                          <span className="tree-toggle">•</span>
-                          <span>{item.index}. {item.primaryTarget}</span>
-                          <small>{formatDuration(item.durationSeconds)}</small>
+                          <span className="tree-toggle">▾</span>
+                          <span>Run {run.index}{run.contentKey ? ` · ${run.contentKey}` : ""}{run.active ? " · Active" : ""}</span>
+                          <small>{formatDuration(scopeDuration(snapshot, encounters.map((item) => item.id), "elapsed"))}</small>
                         </button>
+                        <div className="run-encounters">
+                          {encounters.map((item) => (
+                            <div className="tree-branch encounter-deletable" key={item.id}>
+                              <label className="encounter-check" title="Include in a custom merged scope">
+                                <input
+                                  type="checkbox"
+                                  checked={checkedEncounterIds.has(item.id)}
+                                  onChange={() => toggleEncounterChecked(item.id)}
+                                />
+                              </label>
+                              <button
+                                className={`tree-row ${scopeSelection.kind === "encounter" && scopeSelection.encounterId === item.id ? "selected" : ""}`}
+                                onClick={() => selectEncounter(item.id)}
+                              >
+                                <span className="tree-toggle">•</span>
+                                <span>{item.index}. {item.primaryTarget}</span>
+                                <small>{formatDuration(item.durationSeconds)}</small>
+                              </button>
+                              <button
+                                className="encounter-delete-button"
+                                title={`Remove ${item.index}. ${item.primaryTarget}`}
+                                aria-label={`Remove encounter ${item.index}`}
+                                onClick={() => deleteEncounter(item.id)}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
@@ -854,7 +1022,7 @@ function EntityBreakdown({ entity, scope, tab, loading, snapshot, splitPetDamage
       {!loading && tab === "individualOutHits" && <HitTable hits={entity.individualOutHits} title="Individual Out Hits" />}
       {!loading && tab === "individualInHits" && <HitTable hits={entity.individualInHits} title="Individual In Hits" />}
       {!loading && tab === "actionPointDetails" && <PowerTable key={`${entity.entityId}-resources`} rows={entity.actionPointDetails} amountLabel="Resource" resource />}
-      {!loading && tab === "encounters" && <EntityEncounterHistory entity={entity} snapshot={snapshot} splitPetDamage={splitPetDamage} />}
+      {!loading && tab === "encounters" && <EntityEncounterHistory entity={entity} snapshot={snapshot} encounterIds={scope.encounterIds} splitPetDamage={splitPetDamage} />}
     </section>
   );
 }
@@ -955,14 +1123,15 @@ function CompactHitTimeline({ hits, title, incoming, onClear }: { hits: Individu
   </section>;
 }
 
-function EntityEncounterHistory({ entity, snapshot, splitPetDamage }: { entity: EntityAnalysis; snapshot: CombatSnapshot; splitPetDamage: boolean }) {
+function EntityEncounterHistory({ entity, snapshot, encounterIds, splitPetDamage }: { entity: EntityAnalysis; snapshot: CombatSnapshot; encounterIds: string[]; splitPetDamage: boolean }) {
   const [selectedEncounterId, setSelectedEncounterId] = useState<string>();
   const [encounterDetail, setEncounterDetail] = useState<EntityAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [listHeight, setListHeight] = useState(42);
   const requestSequence = useRef(0);
-  const encounterRows = snapshot.encounters.flatMap((encounter) => {
+  const included = new Set(encounterIds);
+  const encounterRows = snapshot.encounters.filter((encounter) => included.has(encounter.id)).flatMap((encounter) => {
     const player = encounter.playerDamage.find((row) => row.playerId === entity.entityId || sameName(row.name, entity.name) || sameName(row.name, entity.baseName));
     return player ? [{ encounter, player }] : [];
   });
@@ -1126,26 +1295,93 @@ interface EntityTableProps {
   onSelect: (entity: EntityAnalysis) => void;
 }
 
-function buildScope(snapshot: CombatSnapshot, encounter: CombatSnapshot["encounters"][number] | null, splitPets: boolean, remoteEntities: EntityAnalysis[]): ScopeView {
-  if (encounter) {
-    return scopeFromData(`Encounter ${encounter.index} · ${encounter.primaryTarget}`, encounter, remoteEntities);
-  }
-  const entities = splitPets ? snapshot.splitEntities : snapshot.entities;
+function buildScope(
+  snapshot: CombatSnapshot,
+  selection: ScopeSelection,
+  encounterIds: string[],
+  scopeId: string,
+  splitPets: boolean,
+  remoteEntities: EntityAnalysis[],
+): ScopeView {
+  const included = new Set(encounterIds);
+  const encounters = snapshot.encounters.filter((item) => included.has(item.id));
+  const directEncounter =
+    selection.kind === "encounter" ? encounters[0] : undefined;
+  const run =
+    selection.kind === "run"
+      ? snapshot.runs.find((item) => item.id === selection.runId)
+      : undefined;
+  const label = directEncounter
+    ? `Encounter ${directEncounter.index} · ${directEncounter.primaryTarget}`
+    : run
+      ? `Run ${run.index}${run.contentKey ? ` · ${run.contentKey}` : ""}`
+      : selection.kind === "selection"
+        ? `Merged selection · ${encounters.length} encounters`
+        : "All Encounters";
+  const fallbackEntities =
+    selection.kind === "all" && encounterIds.length === snapshot.encounters.length
+      ? splitPets
+        ? snapshot.splitEntities
+        : snapshot.entities
+      : [];
+  const entities = remoteEntities.length > 0 ? remoteEntities : fallbackEntities;
+  const durationMode = selection.kind === "selection" ? "sum" : "elapsed";
   return {
-    id: "all",
-    label: "All Encounters",
-    startedAt: snapshot.firstEventAt,
-    endedAt: snapshot.lastEventAt,
-    durationSeconds: Math.max(1, snapshot.activeCombatSeconds),
-    totalDamage: partyEntities(entities).reduce((sum, entity) => sum + entity.outgoingDamage, 0),
-    totalHealing: partyEntities(entities).reduce((sum, entity) => sum + entity.outgoingHealing, 0),
+    id: scopeId,
+    label,
+    startedAt: encounters[0]?.startedAt ?? null,
+    endedAt: encounters.at(-1)?.endedAt ?? null,
+    durationSeconds: Math.max(1, scopeDuration(snapshot, encounterIds, durationMode)),
+    totalDamage: encounters.reduce((sum, item) => sum + item.totalDamage, 0),
+    totalHealing: encounters.reduce((sum, item) => sum + item.totalHealing, 0),
     entities,
-    deaths: snapshot.deaths,
+    deaths: encounters.flatMap((item) => item.deaths),
+    encounterIds,
   };
 }
 
-function scopeFromData(label: string, data: CombatSnapshot["encounters"][number], entities: EntityAnalysis[]): ScopeView {
-  return { id: data.id, label, startedAt: data.startedAt, endedAt: data.endedAt, durationSeconds: Math.max(1, data.durationSeconds), totalDamage: data.totalDamage, totalHealing: data.totalHealing, entities, deaths: data.deaths };
+function scopeDuration(
+  snapshot: CombatSnapshot,
+  encounterIds: string[],
+  mode: "elapsed" | "sum",
+): number {
+  const included = new Set(encounterIds);
+  const encounters = snapshot.encounters.filter((item) => included.has(item.id));
+  if (mode === "sum") {
+    return encounters.reduce((sum, item) => sum + item.durationSeconds, 0);
+  }
+  return snapshot.runs.reduce((sum, run) => {
+    const values = encounters.filter((item) => item.runId === run.id);
+    const first = values[0];
+    const last = values.at(-1);
+    return first && last
+      ? sum + Math.max(0, (last.endedAt - first.startedAt) / 1_000)
+      : sum;
+  }, 0);
+}
+
+function readHiddenEncounterIds(filePath: string): string[] {
+  try {
+    const value = JSON.parse(
+      window.localStorage.getItem(hiddenEncounterStorageKey(filePath)) ?? "[]",
+    ) as unknown;
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeHiddenEncounterIds(filePath: string, ids: Set<string>): void {
+  window.localStorage.setItem(
+    hiddenEncounterStorageKey(filePath),
+    JSON.stringify([...ids]),
+  );
+}
+
+function hiddenEncounterStorageKey(filePath: string): string {
+  return `${HIDDEN_ENCOUNTER_STORAGE_PREFIX}${encodeURIComponent(filePath)}`;
 }
 
 function partyEntities(entities: EntityAnalysis[]): EntityAnalysis[] {

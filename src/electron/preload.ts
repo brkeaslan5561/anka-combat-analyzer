@@ -23,6 +23,7 @@ const api: AnalyzerApi = {
   saveData: () => ipcRenderer.invoke("save-data"),
   clearData: () => ipcRenderer.invoke("clear-data"),
   startNewEncounter: () => ipcRenderer.invoke("start-new-encounter"),
+  startNewRun: () => ipcRenderer.invoke("start-new-run"),
   endEncounter: () => ipcRenderer.invoke("end-encounter"),
   markEncounterFail: () => ipcRenderer.invoke("mark-encounter-fail"),
   getEntityDetail: (

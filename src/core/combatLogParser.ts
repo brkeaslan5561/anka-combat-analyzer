@@ -344,6 +344,9 @@ function prettifyArchetype(archetype: string): string {
 }
 
 function getActorKind(event: CombatEvent): CombatEntity["kind"] {
+  if (event.abilityId === "Pn.Wypyjw1" && event.source.kind !== "unknown") {
+    return event.source.kind;
+  }
   return event.owner.kind !== "unknown" ? event.owner.kind : event.source.kind;
 }
 
@@ -353,15 +356,27 @@ export function isDamageToCreature(event: CombatEvent): boolean {
     getActorKind(event) === "player" &&
     event.target.kind === "creature" &&
     event.magnitude > 0 &&
-    DAMAGE_EFFECT_TYPES.has(event.effectType)
+    isDamageEvent(event)
+  );
+}
+
+/**
+ * ShowPowerDisplayName records are UI/control notifications in Cryptic logs.
+ * The reference Neverwinter ACT parser routes them through its non-damage
+ * path even when their effect type otherwise looks damage-like.
+ */
+export function isDamageEvent(event: CombatEvent): boolean {
+  return (
+    DAMAGE_EFFECT_TYPES.has(event.effectType) &&
+    !event.flags.includes("ShowPowerDisplayName")
   );
 }
 
 export function isHostileCombatEvent(event: CombatEvent): boolean {
   if (
     isIgnoredCombatEvent(event) ||
-    !DAMAGE_EFFECT_TYPES.has(event.effectType) ||
-    event.magnitude <= 0
+    (!isDamageEvent(event) && !isMitigationEvent(event)) ||
+    (isDamageEvent(event) && event.magnitude <= 0)
   ) {
     return false;
   }
@@ -389,7 +404,7 @@ export function isResourceEvent(event: CombatEvent): boolean {
 export function isCombatAnalysisEvent(event: CombatEvent): boolean {
   return (
     !isIgnoredCombatEvent(event) &&
-    (DAMAGE_EFFECT_TYPES.has(event.effectType) ||
+    (isDamageEvent(event) ||
       isHealingEvent(event) ||
       isMitigationEvent(event) ||
       isResourceEvent(event))
@@ -401,7 +416,7 @@ export function isEnemyPowerObservation(event: CombatEvent): boolean {
     !isIgnoredCombatEvent(event) &&
     event.owner.kind === "creature" &&
     event.abilityId.startsWith("Pn.") &&
-    (DAMAGE_EFFECT_TYPES.has(event.effectType) ||
+    (isDamageEvent(event) ||
       ENEMY_OBSERVATION_TYPES.has(event.effectType)) &&
     event.target.kind !== "unknown"
   );

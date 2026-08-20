@@ -1,11 +1,13 @@
 import type {
   CombatEntity,
   CombatEvent,
+  CombatRunSummary,
   EntityAnalysis,
   EncounterSummary,
   PhaseSummary,
   RawEventSummary,
 } from "../shared/types";
+import { parseAggregateScopeId } from "../shared/analysisScope";
 import {
   isDamageToCreature,
   isHostileCombatEvent,
@@ -39,6 +41,9 @@ interface EncounterTargetAccumulator {
 interface EncounterAccumulator {
   id: string;
   index: number;
+  runId: string;
+  runIndex: number;
+  contentKey?: string;
   startedAt: number;
   endedAt: number;
   lastHostileAt: number;
@@ -59,6 +64,7 @@ const HELPER_TARGET_PATTERN =
   /\b(add|minion|summon|clone|illusion|orb|portal|totem|pillar|tentacle|hand|shard|fragment|vortex|beam|caster|mirage|lootdropper)\b/i;
 const M31_ZULKIR_ARCHETYPE_PATTERN = /^M31_Trial_Zulkir_([ABC])$/i;
 const M31_ZULKIR_PHASE_KEY = "m31:trial:zulkir";
+const RUN_GAP_MS = 10 * 60 * 1_000;
 
 /**
  * Encounter segmentation stays intentionally simple for normal content:
@@ -78,15 +84,19 @@ const M31_ZULKIR_PHASE_KEY = "m31:trial:zulkir";
 export class EncounterEngine {
   private readonly completed: EncounterAccumulator[] = [];
   private current: EncounterAccumulator | null = null;
+  private readonly aggregateCache = new Map<
+    string,
+    { statistics: StatisticsAccumulator; durationSeconds: number }
+  >();
 
   constructor(private readonly encounterGapSeconds = 10) {}
 
-  ingest(event: CombatEvent): void {
+  ingest(event: CombatEvent): boolean {
     const hostile = isHostileCombatEvent(event);
     const encounterGapMs = this.encounterGapSeconds * 1_000;
 
     if (this.current?.manual && this.current.hostileEvents === 0 && !hostile) {
-      return;
+      return false;
     }
 
     if (this.current && !this.current.manual && this.current.hostileEvents > 0) {
@@ -94,7 +104,7 @@ export class EncounterEngine {
       if (hostile && gap > encounterGapMs) {
         this.endCurrent();
       } else if (!hostile && gap > encounterGapMs) {
-        return;
+        return false;
       }
     }
 
@@ -108,11 +118,23 @@ export class EncounterEngine {
     }
 
     if (!this.current) {
-      if (!hostile) return;
-      this.current = this.createEncounter(event.timestamp, false);
+      if (!hostile) return false;
+      this.current = this.createEncounter(event.timestamp, false, event);
     }
 
     if (hostile && this.current.manual && this.current.hostileEvents === 0) {
+      const contentKey = inferContentKey(event);
+      const previous = this.completed.at(-1);
+      if (
+        contentKey &&
+        previous?.contentKey &&
+        contentKey !== previous.contentKey &&
+        this.current.runIndex === previous.runIndex
+      ) {
+        this.current.runIndex = previous.runIndex + 1;
+        this.current.runId = `run-${this.current.runIndex}-${event.timestamp}`;
+      }
+      this.current.contentKey = contentKey ?? this.current.contentKey;
       this.current.startedAt = event.timestamp;
       this.current.endedAt = event.timestamp;
       this.current.lastHostileAt = event.timestamp;
@@ -130,10 +152,46 @@ export class EncounterEngine {
     const activePhase = this.current.phases.at(-1);
     activePhase?.merged.ingest(event);
     activePhase?.split.ingest(event);
+    this.aggregateCache.clear();
+    return true;
   }
 
   getSummaries(): EncounterSummary[] {
     return this.getAll().map((encounter) => this.toSummary(encounter));
+  }
+
+  getRunSummaries(
+    summaries: EncounterSummary[] = this.getSummaries(),
+  ): CombatRunSummary[] {
+    const encounters = this.getAll();
+    const runs = new Map<number, EncounterSummary[]>();
+    for (const encounter of summaries) {
+      const entries = runs.get(encounter.runIndex) ?? [];
+      entries.push(encounter);
+      runs.set(encounter.runIndex, entries);
+    }
+    return [...runs.entries()].map(([index, entries]) => {
+      const first = entries[0];
+      const last = entries.at(-1);
+      const accumulator = encounters.find(
+        (item) => item.runIndex === index && item.contentKey,
+      );
+      const currentRun = this.current?.runIndex === index;
+      return {
+        id: first?.runId ?? `run-${index}`,
+        index,
+        startedAt: first?.startedAt ?? 0,
+        endedAt: last?.endedAt ?? first?.startedAt ?? 0,
+        durationSeconds: calculateElapsedDuration(
+          encounters.filter((item) => item.runIndex === index),
+        ),
+        totalDamage: entries.reduce((sum, item) => sum + item.totalDamage, 0),
+        totalHealing: entries.reduce((sum, item) => sum + item.totalHealing, 0),
+        encounterIds: entries.map((item) => item.id),
+        contentKey: accumulator?.contentKey,
+        active: Boolean(currentRun),
+      };
+    });
   }
 
   getActiveCombatSeconds(): number {
@@ -145,12 +203,7 @@ export class EncounterEngine {
   }
 
   getElapsedSeconds(): number {
-    const encounters = this.getAll().filter((encounter) => encounter.hostileEvents > 0);
-    if (encounters.length === 0) return 0;
-    const first = encounters[0];
-    const last = encounters.at(-1);
-    if (!first || !last) return 0;
-    return Math.max(0, (last.endedAt - first.startedAt) / 1_000);
+    return calculateElapsedDuration(this.getAll());
   }
 
   getEntityDetail(
@@ -158,6 +211,13 @@ export class EncounterEngine {
     splitPetDamage: boolean,
     entityId: string,
   ): EntityAnalysis | null {
+    const aggregate = this.buildAggregateScope(scopeId, splitPetDamage);
+    if (aggregate) {
+      return aggregate.statistics.getEntityDetail(
+        entityId,
+        Math.max(1, aggregate.durationSeconds),
+      );
+    }
     for (const encounter of this.getAll()) {
       if (encounter.id === scopeId) {
         const durationSeconds = Math.max(
@@ -181,6 +241,8 @@ export class EncounterEngine {
   }
 
   getRawEvents(scopeId: string): RawEventSummary[] {
+    const aggregate = this.buildAggregateScope(scopeId, false);
+    if (aggregate) return aggregate.statistics.getRawEvents();
     for (const encounter of this.getAll()) {
       if (encounter.id === scopeId) return encounter.merged.getRawEvents();
       const phase = encounter.phases.find((item) => item.id === scopeId);
@@ -193,6 +255,12 @@ export class EncounterEngine {
     scopeId: string,
     splitPetDamage: boolean,
   ): EntityAnalysis[] {
+    const aggregate = this.buildAggregateScope(scopeId, splitPetDamage);
+    if (aggregate) {
+      return aggregate.statistics.getEntitySummaries(
+        Math.max(1, aggregate.durationSeconds),
+      );
+    }
     for (const encounter of this.getAll()) {
       if (encounter.id === scopeId) {
         const durationSeconds = Math.max(
@@ -220,6 +288,11 @@ export class EncounterEngine {
     this.current = this.createEncounter(Date.now(), true);
   }
 
+  startNewRun(): void {
+    this.endCurrent();
+    this.current = this.createEncounter(Date.now(), true, undefined, true);
+  }
+
   markCurrentFailed(): void {
     if (!this.current) return;
     this.current.result = "fail";
@@ -238,13 +311,33 @@ export class EncounterEngine {
   reset(): void {
     this.completed.length = 0;
     this.current = null;
+    this.aggregateCache.clear();
   }
 
-  private createEncounter(timestamp: number, manual: boolean): EncounterAccumulator {
+  private createEncounter(
+    timestamp: number,
+    manual: boolean,
+    firstEvent?: CombatEvent,
+    forceNewRun = false,
+  ): EncounterAccumulator {
     const index = this.completed.length + 1;
+    const previous = this.completed.at(-1);
+    const contentKey = firstEvent ? inferContentKey(firstEvent) : undefined;
+    const contentChanged = Boolean(
+      previous?.contentKey && contentKey && previous.contentKey !== contentKey,
+    );
+    const longGap = Boolean(
+      previous && timestamp - previous.endedAt >= RUN_GAP_MS,
+    );
+    const startsRun = !previous || forceNewRun || contentChanged || longGap;
+    const runIndex = startsRun ? (previous?.runIndex ?? 0) + 1 : previous.runIndex;
+    const runId = startsRun ? `run-${runIndex}-${timestamp}` : previous.runId;
     return {
       id: `encounter-${index}-${timestamp}`,
       index,
+      runId,
+      runIndex,
+      contentKey: contentKey ?? (startsRun ? undefined : previous?.contentKey),
       startedAt: timestamp,
       endedAt: timestamp,
       lastHostileAt: timestamp,
@@ -256,6 +349,34 @@ export class EncounterEngine {
       result: "active",
       manual,
     };
+  }
+
+  private buildAggregateScope(
+    scopeId: string,
+    splitPetDamage: boolean,
+  ): { statistics: StatisticsAccumulator; durationSeconds: number } | null {
+    const scope = parseAggregateScopeId(scopeId);
+    if (!scope) return null;
+    const cacheKey = `${splitPetDamage ? "split" : "merged"}:${scopeId}`;
+    const cached = this.aggregateCache.get(cacheKey);
+    if (cached) return cached;
+    const requested = new Set(scope.encounterIds);
+    const encounters = this.getAll().filter((item) => requested.has(item.id));
+    const statistics = new StatisticsAccumulator(splitPetDamage, 20_000);
+    for (const encounter of encounters) {
+      statistics.mergeFrom(splitPetDamage ? encounter.split : encounter.merged);
+    }
+    const durationSeconds =
+      scope.mode === "sum"
+        ? encounters.reduce(
+            (sum, item) =>
+              sum + Math.max(0, (item.endedAt - item.startedAt) / 1_000),
+            0,
+          )
+        : calculateElapsedDuration(encounters);
+    const aggregate = { statistics, durationSeconds };
+    this.aggregateCache.set(cacheKey, aggregate);
+    return aggregate;
   }
 
   private shouldSplitForMajorTargetTransition(
@@ -355,6 +476,7 @@ export class EncounterEngine {
     target.firstSeenAt = Math.min(target.firstSeenAt, event.timestamp);
     target.lastSeenAt = Math.max(target.lastSeenAt, event.timestamp);
     encounter.damageTargets.set(key, target);
+    encounter.contentKey ??= inferContentKey(event);
   }
 
   private getAll(): EncounterAccumulator[] {
@@ -389,6 +511,9 @@ export class EncounterEngine {
     return {
       id: encounter.id,
       index: encounter.index,
+      runId: encounter.runId,
+      runIndex: encounter.runIndex,
+      contentKey: encounter.contentKey,
       startedAt: encounter.startedAt,
       endedAt: encounter.endedAt,
       durationSeconds,
@@ -452,6 +577,46 @@ function isMajorTargetAccumulator(target: EncounterTargetAccumulator): boolean {
 
   if (M31_ZULKIR_ARCHETYPE_PATTERN.test(archetype)) return true;
   return archetype.toLocaleLowerCase("en-US").includes("boss");
+}
+
+function inferContentKey(event: CombatEvent): string | undefined {
+  const creatures = [event.target, event.owner, event.source].filter(
+    (entity): entity is CombatEntity => entity.kind === "creature",
+  );
+  for (const creature of creatures) {
+    const archetype = creature.archetype ?? "";
+    const moduleContent = archetype.match(
+      /^(M\d+)_(Trial|Dungeon|Skirmish|Queue)(?:_|$)/i,
+    );
+    if (moduleContent) {
+      return `${moduleContent[1].toUpperCase()} ${titleCase(moduleContent[2])}`;
+    }
+  }
+  return undefined;
+}
+
+function titleCase(value: string): string {
+  const lower = value.toLocaleLowerCase("en-US");
+  return lower.slice(0, 1).toLocaleUpperCase("en-US") + lower.slice(1);
+}
+
+function calculateElapsedDuration(encounters: EncounterAccumulator[]): number {
+  const hostile = encounters.filter((item) => item.hostileEvents > 0);
+  const byRun = new Map<number, EncounterAccumulator[]>();
+  for (const encounter of hostile) {
+    const values = byRun.get(encounter.runIndex) ?? [];
+    values.push(encounter);
+    byRun.set(encounter.runIndex, values);
+  }
+  let seconds = 0;
+  for (const values of byRun.values()) {
+    const first = values[0];
+    const last = values.at(-1);
+    if (first && last) {
+      seconds += Math.max(0, (last.endedAt - first.startedAt) / 1_000);
+    }
+  }
+  return seconds;
 }
 
 function toPhaseSummary(phase: PhaseAccumulator): PhaseSummary {
